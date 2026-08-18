@@ -25,12 +25,10 @@
 
 เปิดแท็บ **Actions → Build images and update Argo CD** ให้สถานะเป็นสีเขียว หลังจบจะเห็น `newTag: sha-.......` ใน `deploy/k8s/kustomization.yaml`
 
-GHCR สร้าง package ครั้งแรกเป็น private ให้เปลี่ยนสอง package นี้เป็น **Public** ครั้งเดียว เพื่อให้ K3s pull ได้โดยไม่ต้องมี registry token:
+workflow publish package สองตัวต่อไปนี้แบบ public จึงให้ K3s pull ได้โดยไม่ต้องมี registry token:
 
 - `carelink-argocd-backend`
 - `carelink-argocd-web`
-
-ไปที่หน้า package → **Package settings → Change visibility → Public**
 
 ### 2. เพิ่ม Application ใน Argo CD
 
@@ -166,4 +164,3 @@ kubectl kustomize deploy/k8s
 ```bash
 node scripts/acceptance.mjs
 ```
-
