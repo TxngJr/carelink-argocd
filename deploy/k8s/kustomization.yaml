@@ -13,8 +13,8 @@ labels:
 images:
   - name: carelink-backend
     newName: ghcr.io/txngjr/carelink-argocd-backend
-    newTag: sha-f3acfe3
+    newTag: sha-8249b36
   - name: carelink-web
     newName: ghcr.io/txngjr/carelink-argocd-web
-    newTag: sha-f3acfe3
+    newTag: sha-8249b36
 
