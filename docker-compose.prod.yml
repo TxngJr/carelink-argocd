@@ -1,0 +1,47 @@
+# Production profile. Differs from docker-compose.yml (dev/demo) in the
+# ways that matter for a real deploy:
+#   - backend runs APP_ENV=production, which config.Load() enforces by
+#     refusing to start without a real JWT_SECRET and CORS_ALLOWED_ORIGINS
+#     (no dev defaults, no /api/dev/seed routes, no auto-seed on boot)
+#   - web is built with VITE_HIDE_DEMO_LOGINS=true, so the login page never
+#     shows the demo-account quick-fill buttons
+#   - mongo runs with an authenticated root user and a named volume
+#
+# Secrets (JWT_SECRET, CORS_ALLOWED_ORIGINS, MONGO_URI, mongo credentials)
+# are read from a .env.production file next to this compose file — copy
+# backend/.env.example, fill in real values, and never commit it.
+services:
+  mongo:
+    image: mongo:7
+    container_name: carelink_mongo_prod
+    restart: unless-stopped
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_ROOT_USER}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_ROOT_PASSWORD}
+    volumes:
+      - mongo_prod_data:/data/db
+
+  backend:
+    build: ./backend
+    container_name: carelink_backend_prod
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      - APP_ENV=production
+    depends_on:
+      - mongo
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile.prod
+    container_name: carelink_web_prod
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
+volumes:
+  mongo_prod_data:
