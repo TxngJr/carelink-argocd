@@ -3,27 +3,30 @@ import bcrypt from 'bcryptjs'
 import {
   Db,
   MongoClient,
-  ObjectId,
   type Collection,
   type CollectionOptions,
   type Document,
+  type FindOneAndUpdateOptions,
 } from 'mongodb'
 import { STATIONS } from '@/lib/stations'
 
 const uri = process.env.MONGO_URI || 'mongodb://localhost:27018/?replicaSet=rs0'
 const dbName = process.env.DB_NAME || 'carelink'
 
-// CareLink keeps the legacy MongoDB schema where most collections use ObjectId
-// identifiers while counter collections intentionally use string identifiers.
-// The MongoDB driver's default untyped Document assumes ObjectId, so expose the
-// real mixed-id shape at the database boundary instead of weakening typechecks
-// throughout the domain layer.
-type CareLinkDocument = Document & { _id?: ObjectId | string }
+// Most CareLink collections use MongoDB's normal ObjectId identifier. Only the
+// counter collections intentionally use string `_id` values. Keep the default
+// collection schema intact and add a narrow overload for that one operation so
+// ObjectId typing remains strict everywhere else in the domain layer.
+type CareLinkCollection = Collection<Document> & {
+  findOneAndUpdate(
+    filter: { _id: string },
+    update: Document,
+    options?: FindOneAndUpdateOptions,
+  ): Promise<Document | null>
+}
+
 type CareLinkDb = Omit<Db, 'collection'> & {
-  collection<TSchema extends Document = CareLinkDocument>(
-    name: string,
-    options?: CollectionOptions,
-  ): Collection<TSchema>
+  collection(name: string, options?: CollectionOptions): CareLinkCollection
 }
 
 type GlobalMongo = typeof globalThis & {
