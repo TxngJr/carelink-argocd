@@ -36,9 +36,12 @@ export function QueueWorkspace({ role, onSelectEncounter }: Props) {
   }, [station])
 
   useEffect(() => {
-    void load()
+    const initial = window.setTimeout(() => void load(), 0)
     const timer = window.setInterval(() => void load(true), 10_000)
-    return () => window.clearInterval(timer)
+    return () => {
+      window.clearTimeout(initial)
+      window.clearInterval(timer)
+    }
   }, [load])
 
   async function action(name: 'call' | 'start' | 'complete' | 'recall' | 'skip' | 'requeue', item?: QueueItem) {
