@@ -152,7 +152,14 @@ export function StaffDashboard({ role, displayName }: Props) {
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'โหลดข้อมูลไม่สำเร็จ') }
   }, [role])
 
-  useEffect(() => { void load(); const timer = window.setInterval(() => void load(), 10_000); return () => window.clearInterval(timer) }, [load])
+  useEffect(() => {
+    const initial = window.setTimeout(() => void load(), 0)
+    const timer = window.setInterval(() => void load(), 10_000)
+    return () => {
+      window.clearTimeout(initial)
+      window.clearInterval(timer)
+    }
+  }, [load])
 
   async function logout() { await clientApi.logout().catch(() => null); router.replace('/login/nurse'); router.refresh() }
   async function checkIn(id: string) {
