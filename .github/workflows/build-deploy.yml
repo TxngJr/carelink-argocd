@@ -36,11 +36,7 @@ jobs:
       - run: npm run build
 
   build:
-    # Wait for verify so its result is visible, but still let the production
-    # Docker build be the final deploy gate. This allows a non-runtime lint
-    # failure to be diagnosed without leaving the cluster permanently stuck
-    # on an image tag that was never built.
-    if: ${{ !cancelled() && github.event_name != 'pull_request' }}
+    if: github.event_name != 'pull_request'
     needs: verify
     runs-on: ubuntu-latest
     steps:
@@ -67,7 +63,7 @@ jobs:
           cache-to: type=gha,mode=max
 
   update-manifest:
-    if: github.event_name != 'pull_request'
+    if: ${{ github.event_name != 'pull_request' && needs.build.result == 'success' }}
     needs: build
     runs-on: ubuntu-latest
     steps:
