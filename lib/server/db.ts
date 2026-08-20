@@ -1,10 +1,30 @@
 import 'server-only'
 import bcrypt from 'bcryptjs'
-import { Db, MongoClient } from 'mongodb'
+import {
+  Db,
+  MongoClient,
+  ObjectId,
+  type Collection,
+  type CollectionOptions,
+  type Document,
+} from 'mongodb'
 import { STATIONS } from '@/lib/stations'
 
 const uri = process.env.MONGO_URI || 'mongodb://localhost:27018/?replicaSet=rs0'
 const dbName = process.env.DB_NAME || 'carelink'
+
+// CareLink keeps the legacy MongoDB schema where most collections use ObjectId
+// identifiers while counter collections intentionally use string identifiers.
+// The MongoDB driver's default untyped Document assumes ObjectId, so expose the
+// real mixed-id shape at the database boundary instead of weakening typechecks
+// throughout the domain layer.
+type CareLinkDocument = Document & { _id?: ObjectId | string }
+type CareLinkDb = Omit<Db, 'collection'> & {
+  collection<TSchema extends Document = CareLinkDocument>(
+    name: string,
+    options?: CollectionOptions,
+  ): Collection<TSchema>
+}
 
 type GlobalMongo = typeof globalThis & {
   __carelinkClient?: MongoClient
@@ -56,7 +76,7 @@ async function initialize(db: Db) {
   ])
 }
 
-export async function getDb() {
+export async function getDb(): Promise<CareLinkDb> {
   if (!globalMongo.__carelinkDbPromise) {
     globalMongo.__carelinkDbPromise = (async () => {
       const mongo = client()
@@ -66,7 +86,7 @@ export async function getDb() {
       return db
     })()
   }
-  return globalMongo.__carelinkDbPromise
+  return globalMongo.__carelinkDbPromise as Promise<CareLinkDb>
 }
 
 export async function pingDb() {
