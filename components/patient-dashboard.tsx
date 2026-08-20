@@ -36,15 +36,6 @@ function AppointmentForm({ appointment, onSaved }: { appointment: Appointment | 
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
-  useEffect(() => {
-    setComplaint(appointment?.chief_complaint || '')
-    setHeight(appointment?.measurements?.height_cm?.toString() || '')
-    setWeight(appointment?.measurements?.weight_kg?.toString() || '')
-    setSbp(appointment?.measurements?.sbp?.toString() || '')
-    setDbp(appointment?.measurements?.dbp?.toString() || '')
-    setSpo2(appointment?.measurements?.spo2?.toString() || '')
-  }, [appointment])
-
   function optional(value: string) { return value.trim() ? Number(value) : undefined }
   function validate(measurements: AppointmentMeasurements) {
     if (!complaint.trim()) return 'กรุณาระบุอาการสำคัญ'
@@ -149,10 +140,20 @@ export function PatientDashboard({ displayName }: { displayName: string }) {
     finally { if (showLoading) setLoading(false) }
   }, [])
 
-  useEffect(() => { void refresh(true); const timer = window.setInterval(() => void refresh(false), 10_000); return () => window.clearInterval(timer) }, [refresh])
+  useEffect(() => {
+    const initial = window.setTimeout(() => void refresh(true), 0)
+    const timer = window.setInterval(() => void refresh(false), 10_000)
+    return () => {
+      window.clearTimeout(initial)
+      window.clearInterval(timer)
+    }
+  }, [refresh])
+
   const unread = useMemo(() => notices.filter((notice) => !notice.is_read).length, [notices])
   async function logout() { await clientApi.logout().catch(() => null); router.replace('/login/patient'); router.refresh() }
   async function readNotice(id: string) { await clientApi.markNotificationRead(id).catch(() => null); setNotices((items) => items.map((item) => item.id === id ? { ...item, is_read: true } : item)) }
+
+  const editableAppointment = appointment?.status === 'submitted' ? appointment : null
 
   return <div className="patient-shell">
     <header className="patient-header"><div className="patient-brand"><img src="/logo-mark.svg" width={38} height={38} alt=""/><div><strong>CareLink</strong><span>Patient Journey</span></div></div><div className="patient-header-actions"><button className="notification-button" onClick={() => setSection('notifications')} aria-label="การแจ้งเตือน">◌{unread > 0 && <em>{unread}</em>}</button><div className="avatar small patient-avatar">{displayName.slice(0,1)}</div></div></header>
@@ -165,7 +166,7 @@ export function PatientDashboard({ displayName }: { displayName: string }) {
           {appointment && <AppointmentStatusCard appointment={appointment} onRefresh={refresh} />}
           {!appointment && <button className="cta-card" onClick={() => setSection('appointment')}><div><span>ยังไม่มีคำขอนัด</span><strong>ส่งอาการเพื่อขอนัดแพทย์</strong></div><b>→</b></button>}
         </>}
-        {section === 'appointment' && <div className="patient-section"><div className="patient-section-title"><span className="eyebrow">APPOINTMENT</span><h1>นัดหมายของฉัน</h1><p>ส่งข้อมูลอาการเบื้องต้นให้ทีมดูแลก่อนถึงโรงพยาบาล</p></div>{appointment && !['cancelled','completed'].includes(appointment.status) && appointment.status !== 'submitted' ? <AppointmentStatusCard appointment={appointment} onRefresh={refresh}/> : <AppointmentForm appointment={appointment?.status === 'submitted' ? appointment : null} onSaved={refresh}/>}</div>}
+        {section === 'appointment' && <div className="patient-section"><div className="patient-section-title"><span className="eyebrow">APPOINTMENT</span><h1>นัดหมายของฉัน</h1><p>ส่งข้อมูลอาการเบื้องต้นให้ทีมดูแลก่อนถึงโรงพยาบาล</p></div>{appointment && !['cancelled','completed'].includes(appointment.status) && appointment.status !== 'submitted' ? <AppointmentStatusCard appointment={appointment} onRefresh={refresh}/> : <AppointmentForm key={editableAppointment?.id || 'new'} appointment={editableAppointment} onSaved={refresh}/>}</div>}
         {section === 'notifications' && <div className="patient-section"><div className="patient-section-title"><span className="eyebrow">NOTIFICATIONS</span><h1>การแจ้งเตือน</h1><p>ข้อมูลคิว การเปลี่ยน Station และสถานะนัดหมาย</p></div><div className="notice-list">{notices.length === 0 ? <div className="empty-state large">ยังไม่มีการแจ้งเตือน</div> : notices.map((notice) => <button className={`notice-card ${notice.is_read ? 'read' : ''}`} key={notice.id} onClick={() => void readNotice(notice.id)}><span className="notice-dot"/><div><strong>{notice.title}</strong><p>{notice.message}</p><time>{thaiDate(notice.created_at)}</time></div>{!notice.is_read && <em>ใหม่</em>}</button>)}</div></div>}
         {section === 'profile' && <div className="patient-section"><div className="profile-hero"><div className="avatar profile-avatar">{(user?.display_name || displayName).slice(0,1)}</div><h1>{user?.display_name || displayName}</h1><span>บัญชีผู้ป่วย CareLink</span></div><section className="patient-card profile-card"><div><span>เบอร์โทร / ชื่อผู้ใช้</span><strong>{user?.username || '-'}</strong></div><div><span>ประเภทบัญชี</span><strong>ผู้ป่วย</strong></div><div><span>สถานะ</span><strong className="online-text">พร้อมใช้งาน</strong></div></section><button className="button danger-outline large full" onClick={() => void logout()}>ออกจากระบบ</button><p className="prototype-note">CareLink เป็น Prototype สำหรับโครงงานการศึกษา ข้อมูลในระบบไม่ใช้แทนคำแนะนำทางการแพทย์</p></div>}
       </>}
