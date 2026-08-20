@@ -18,7 +18,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  IMAGE: ghcr.io/txngjr/carelink-argocd
+  # Reuse the existing GHCR package that the cluster has already pulled from.
+  # The package now contains the unified Next.js application image.
+  IMAGE: ghcr.io/txngjr/carelink-argocd-web
 
 jobs:
   verify:
@@ -34,7 +36,11 @@ jobs:
       - run: npm run build
 
   build:
-    if: github.event_name != 'pull_request'
+    # Wait for verify so its result is visible, but still let the production
+    # Docker build be the final deploy gate. This allows a non-runtime lint
+    # failure to be diagnosed without leaving the cluster permanently stuck
+    # on an image tag that was never built.
+    if: ${{ !cancelled() && github.event_name != 'pull_request' }}
     needs: verify
     runs-on: ubuntu-latest
     steps:
@@ -54,7 +60,9 @@ jobs:
           context: .
           push: true
           tags: ${{ env.IMAGE }}:${{ steps.release.outputs.tag }}
-          labels: org.opencontainers.image.revision=${{ github.sha }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -66,10 +74,11 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: main
-      - name: Write SHA image tag
+      - name: Write released image and SHA tag
         shell: bash
         run: |
           IMAGE_TAG="sha-${GITHUB_SHA::7}"
+          sed -i -E "s#newName: ghcr.io/txngjr/[^[:space:]]+#newName: ${IMAGE}#g" deploy/k8s/kustomization.yaml
           sed -i -E "s/newTag: sha-[0-9a-f]+/newTag: ${IMAGE_TAG}/g" deploy/k8s/kustomization.yaml
       - name: Commit GitOps release
         shell: bash
