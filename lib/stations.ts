@@ -24,7 +24,6 @@ export const STATIONS: StationDefinition[] = [
   { code: 'CHEMO', name: 'คลินิกเคมีบำบัด', floor: 'ชั้น 3', averageServiceMin: 20, capacity: 10 },
   { code: 'ENT', name: 'คลินิกหู คอ จมูก', floor: 'ชั้น 2', averageServiceMin: 15, capacity: 6 },
   { code: 'BRA', name: 'รังสีรักษาระยะใกล้', floor: 'ชั้น 3', averageServiceMin: 20, capacity: 5 },
-  { code: 'RT', name: 'งานรังสีรักษา/ฉายแสง', floor: 'ชั้น 3', averageServiceMin: 20, capacity: 8 },
   { code: 'OST', name: 'งานออสโตมีและดูแลแผล', floor: 'ชั้น 2', averageServiceMin: 15, capacity: 6 },
   { code: 'RC', name: 'พบแพทย์หลังผลตรวจ', floor: 'ชั้น 2', averageServiceMin: 12, capacity: 6 },
   { code: 'TD', name: 'วินิจฉัยและวางแผนการรักษา', floor: 'ชั้น 2', averageServiceMin: 20, capacity: 5 },
@@ -37,7 +36,7 @@ export const STATIONS: StationDefinition[] = [
 export const PC_CODES = new Set(['PC', 'PC2', 'PC3', 'PC4'])
 export const BASE_ROUTE = ['NPR', 'EV', 'VM', 'MHT'] as const
 export const OPTIONAL_ROUTE_CODES = new Set([
-  'XR', 'LAB', 'HEM', 'SUR', 'GYN', 'IR', 'CHEMO', 'ENT', 'BRA', 'RT', 'OST', 'RC', 'TD', 'PD',
+  'XR', 'LAB', 'HEM', 'SUR', 'GYN', 'IR', 'CHEMO', 'ENT', 'BRA', 'OST', 'RC', 'TD', 'PD',
 ])
 
 export const stationMap = new Map(STATIONS.map((station) => [station.code, station]))
