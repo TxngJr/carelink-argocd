@@ -12,4 +12,4 @@ labels:
 images:
   - name: carelink-app
     newName: ghcr.io/txngjr/carelink-argocd-web
-    newTag: sha-2732b2e
+    newTag: sha-43337d4
