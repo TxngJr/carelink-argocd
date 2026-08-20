@@ -1,6 +1,0 @@
-.git
-.env*
-main
-coverage.out
-Dockerfile*
-

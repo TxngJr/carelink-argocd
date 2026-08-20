@@ -1,20 +1,8 @@
-# Local configuration
-.env
-.env.*
-!.env.example
-
-# Dependencies and build output
-**/node_modules/
-**/dist/
-**/.expo/
-care-link/android/
-care-link/ios/
-artifacts/
-
-# Local binaries and editor files
-backend/main
+node_modules/
+.next/
+out/
+coverage/
 *.log
+.env
+.env.local
 .DS_Store
-.idea/
-.vscode/
-.claude/
