@@ -1,166 +1,89 @@
-# CareLink Argo CD
+# CareLink — Single Next.js Prototype
 
-โปรเจ็คจบสำหรับ deploy ระบบ CareLink แบบ GitOps ประกอบด้วยเว็บเจ้าหน้าที่, Go API, MongoDB และ Android patient app
+CareLink is a graduation-project prototype for appointment, patient-flow, queue, and patient-journey management. The repository has been consolidated into **one full-stack Next.js application**. The previous Go backend, Vite staff frontend, and Expo patient application are no longer separate deployable applications.
 
-- Web/API: <https://carelink.denmannsolutions.com>
-- Health check: <https://carelink.denmannsolutions.com/health>
-- Android package: `com.txngjr.carelink`
-- Kubernetes namespace: `carelink`
-- Argo CD application: `carelink`
+## Architecture
 
-## การทำงานของ GitOps
+- **Next.js App Router + TypeScript** — staff UI, patient mobile-first Web App, and API Route Handlers in one project.
+- **MongoDB** — retains the existing CareLink collections and snake_case document fields so existing prototype data remains compatible.
+- **HttpOnly cookie session** — browser authentication, while API handlers still accept the legacy Bearer JWT format.
+- **Role isolation** — `nurse`, `doctor`, and `patient` are checked server-side before page/API access.
+- **Single Docker image** — `ghcr.io/txngjr/carelink-argocd:<sha>`.
 
-เมื่อ push การแก้ไขใน `backend/` หรือ `web/` เข้า branch `main`:
+## Portals
 
-1. GitHub Actions รัน test และ build Docker images
-2. Push images ไป GHCR ด้วย tag เดียวกัน เช่น `sha-a1b2c3d`
-3. Workflow แก้ `deploy/k8s/kustomization.yaml` แล้ว commit tag กลับเข้า `main`
-4. Argo CD เห็น commit ใหม่และ auto-sync เข้า namespace `carelink`
-
-ไม่ต้องแก้ tag ด้วยมือ และไม่มี `latest` ใน deployment
-
-## Deploy ครั้งแรก
-
-### 1. รอ GitHub Actions build images
-
-เปิดแท็บ **Actions → Build images and update Argo CD** ให้สถานะเป็นสีเขียว หลังจบจะเห็น `newTag: sha-.......` ใน `deploy/k8s/kustomization.yaml`
-
-workflow publish package สองตัวต่อไปนี้แบบ public จึงให้ K3s pull ได้โดยไม่ต้องมี registry token:
-
-- `carelink-argocd-backend`
-- `carelink-argocd-web`
-
-### 2. เพิ่ม Application ใน Argo CD
-
-วิธีสั้นที่สุดคือ apply Application manifest:
-
-```bash
-kubectl apply -f deploy/argocd/application.yaml
-```
-
-หรือกด **NEW APP** ในหน้า Argo CD แล้วใช้ค่า:
-
-| ช่อง | ค่า |
-|---|---|
-| Application Name | `carelink` |
-| Project | `default` |
-| Sync Policy | `Automatic` |
-| Repository URL | `https://github.com/TxngJr/carelink-argocd.git` |
-| Revision | `main` |
-| Path | `deploy/k8s` |
-| Cluster | `https://kubernetes.default.svc` |
-| Namespace | `carelink` |
-
-manifest เปิด `prune` และ `selfHeal` ไว้แล้ว หลัง sync ควรเห็น `web`, `backend` และ `mongo` เป็น Healthy
-
-ตรวจจากเครื่องที่เข้าถึง cluster:
-
-```bash
-kubectl -n carelink get pods,svc,pvc
-kubectl -n carelink rollout status statefulset/mongo
-kubectl -n carelink rollout status deployment/backend
-kubectl -n carelink rollout status deployment/web
-```
-
-### 3. เพิ่ม Cloudflare Tunnel route
-
-ใน tunnel เดียวกับภาพตัวอย่าง เพิ่ม Published application route:
-
-| ช่อง | ค่า |
-|---|---|
-| Hostname | `carelink.denmannsolutions.com` |
-| Path | `*` |
-| Service | `http://carelink.carelink.svc.cluster.local:80` |
-
-Cloudflare จบ TLS ที่ด้านหน้า ส่วน service ภายใน cluster ใช้ HTTP ตามปกติ จากนั้นทดสอบ:
-
-```bash
-curl https://carelink.denmannsolutions.com/health
-```
-
-## Android APK
-
-API URL ถูกกำหนดเป็น `https://carelink.denmannsolutions.com` ในทั้ง fallback ของแอปและ EAS profile
-
-สร้าง APK บนเครื่องนี้ด้วย Android SDK:
-
-```bash
-./scripts/build-apk.sh
-```
-
-ไฟล์จะอยู่ที่ `artifacts/carelink.apk`
-
-หรือใช้ EAS cloud build:
-
-```bash
-cd care-link
-npx eas-cli login
-npx eas-cli build --platform android --profile production-apk
-```
-
-บน GitHub สามารถเพิ่ม repository secret ชื่อ `EXPO_TOKEN` แล้วกด **Actions → Build Android APK → Run workflow** ได้เช่นกัน
-
-## ค่า demo ที่ deploy ให้แล้ว
-
-โปรเจ็คนี้ตั้งใจเป็นงานส่งและเก็บ Secret แบบ plain text ใน `deploy/k8s/secret.yaml` ตามโจทย์ Backend ใช้ `APP_ENV=development` เพื่อ seed บัญชี/Station อัตโนมัติครั้งแรก และเก็บข้อมูล MongoDB ใน PVC ขนาด 2 GiB
-
-| Username | Password | สิทธิ์ |
+| Portal | URL | Purpose |
 |---|---|---|
-| `nurse` | `password123` | นัด/เช็กอิน/Station ที่ไม่ใช่ PC |
-| `doctor` | `password123` | ยืนยันนัด/PC–PC4/กำหนด route |
+| Staff | `/login/nurse` | Nurse + doctor login; role redirects to the correct workspace |
+| Patient | `/login/patient` | Patient login |
+| Patient registration | `/register/patient` | Create patient account |
+| Nurse | `/nurse` | Appointment proposal, arrival/check-in, non-PC queues |
+| Doctor | `/doctor` | Appointment confirmation, PC queues, post-consult route |
+| Patient app | `/patient` | Appointment request, queue journey, notifications, profile |
 
-ผู้ป่วยสมัครจาก Android app ด้วยชื่อ เบอร์โทร วันเกิด และรหัสผ่าน
+Prototype staff accounts are seeded on first database connection:
 
-## รันบนเครื่องสำหรับพัฒนา
+- `nurse` / `password123`
+- `doctor` / `password123`
+
+Patients register with phone number + password. Existing users are not overwritten by the seed.
+
+## Preserved core workflow
+
+1. Patient registers/logs in and submits a chief complaint plus optional measurements.
+2. Nurse reviews the request and proposes an appointment time.
+3. Doctor confirms the time and assigns `PC`, `PC2`, `PC3`, or `PC4`.
+4. On the appointment day, the patient reports arrival.
+5. Nurse confirms check-in; CareLink creates an active encounter and the first `NPR-###` queue.
+6. Default route: `NPR → EV → VM → MHT → PCx`.
+7. Doctor defines the post-PC route. It must finish at `DH`, or `HA → IPW`.
+8. Queue actions remain: call, start, recall, skip/no-show, requeue, complete-and-advance.
+9. Patient sees current queue, queue ahead, estimated wait, next station, route timeline, and notifications.
+
+## Local run
+
+### Docker (recommended)
 
 ```bash
-docker compose up -d --build
-curl http://localhost:8080/health
+docker compose up --build
 ```
 
-- เว็บเจ้าหน้าที่: <http://localhost:5173>
-- Backend: <http://localhost:8080>
-- MongoDB host port: `27018`
+Open `http://localhost:3000`.
 
-ล้างและ seed ฐาน development:
+### Node
+
+Use Node 22 (minimum supported by this repository is Node 20.9):
 
 ```bash
-curl -X POST http://localhost:8080/api/dev/seed
+npm install
+cp .env.example .env.local
+npm run dev
 ```
 
-## Demo flow
+When running Mongo through `docker compose`, use the host URI from `.env.example`.
 
-1. เปิด Android app สมัครผู้ป่วย แล้วส่งอาการพร้อมค่าที่วัดได้
-2. Login เว็บด้วย `nurse` เปิดคำขอใหม่และเสนอวัน/เวลา
-3. Login ด้วย `doctor` ยืนยันนัดและเลือก `PC–PC4`
-4. ผู้ป่วยกดแจ้งมาถึง แล้วพยาบาลยืนยันเช็กอิน
-5. เดินคิว `NPR → EV → VM → MHT → PCx`
-6. แพทย์กำหนด route หลังตรวจ เช่น `LAB → RC → PD → DH` หรือ `HA → IPW`
-7. Android app แสดงสถานะจน visit เสร็จสมบูรณ์
-
-## ทดสอบ
+## Checks
 
 ```bash
-cd backend
-go test ./...
-go vet ./...
-
-cd ../web
-npm ci
-npm test
+npm run typecheck
+npm run lint
 npm run build
-
-cd ../care-link
-npm ci
-npm test
-npx expo export --platform web
-
-cd ..
-kubectl kustomize deploy/k8s
 ```
 
-ตรวจระบบครบ flow หลัง `docker compose up`:
+`GET /health` checks the Next.js service and Mongo connection.
 
-```bash
-node scripts/acceptance.mjs
-```
+## Deployment
+
+`deploy/k8s` now deploys only:
+
+- one CareLink Next.js `Deployment` + `Service`
+- MongoDB `StatefulSet`
+- prototype `Secret`
+
+The checked-in `secret.yaml` intentionally contains demo values because this repository is a classroom prototype. Do not copy that practice to a real healthcare production system.
+
+Argo CD continues to sync `deploy/k8s` from `main`. GitHub Actions builds one immutable image and updates the Kustomize tag.
+
+## Important prototype note
+
+This is an educational prototype, not a production medical device or a hospital information system. Do not use real patient-identifiable or clinical data without a proper security/privacy review, access logging, backup strategy, secrets management, and compliance controls.

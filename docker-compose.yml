@@ -1,39 +1,40 @@
 services:
   mongo:
     image: mongo:7
-    container_name: carelink_mongo
     command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
     ports:
       - "27018:27017"
     volumes:
-      - mongo_data:/data/db
+      - mongo-data:/data/db
     healthcheck:
-      test: ["CMD-SHELL", "mongosh --quiet --eval 'try { rs.status().ok } catch (e) { rs.initiate({_id:\"rs0\",members:[{_id:0,host:\"mongo:27017\"}]}).ok }' | grep 1"]
+      test: ["CMD-SHELL", "mongosh --quiet --eval 'db.adminCommand({ping:1}).ok' | grep -q 1"]
       interval: 5s
-      timeout: 5s
-      retries: 20
+      timeout: 3s
+      retries: 30
 
-  backend:
-    build: ./backend
-    container_name: carelink_backend
-    ports:
-      - "8080:8080"
-    environment:
-      - MONGO_URI=mongodb://mongo:27017/?replicaSet=rs0
-      - DB_NAME=carelink
-      - JWT_SECRET=carelink_dev_secret
-      - APP_ENV=development
+  mongo-init:
+    image: mongo:7
     depends_on:
       mongo:
         condition: service_healthy
+    restart: "no"
+    command: >-
+      mongosh --host mongo:27017 --quiet --eval
+      'try { rs.status().ok } catch (e) { rs.initiate({_id:"rs0",members:[{_id:0,host:"mongo:27017"}]}) }'
 
-  web:
-    build: ./web
-    container_name: carelink_web
-    ports:
-      - "5173:5173"
+  carelink:
+    build: .
     depends_on:
-      - backend
+      mongo-init:
+        condition: service_completed_successfully
+    ports:
+      - "3000:3000"
+    environment:
+      MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      DB_NAME: carelink
+      JWT_SECRET: carelink-demo-jwt-secret-denmannsolutions-2026
+      APP_ENV: development
+      NEXT_PUBLIC_APP_NAME: CareLink
 
 volumes:
-  mongo_data:
+  mongo-data:

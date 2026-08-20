@@ -5,16 +5,11 @@ resources:
   - namespace.yaml
   - secret.yaml
   - mongo.yaml
-  - backend.yaml
-  - web.yaml
+  - app.yaml
 labels:
   - pairs:
       app.kubernetes.io/part-of: carelink
 images:
-  - name: carelink-backend
-    newName: ghcr.io/txngjr/carelink-argocd-backend
-    newTag: sha-8249b36
-  - name: carelink-web
-    newName: ghcr.io/txngjr/carelink-argocd-web
-    newTag: sha-8249b36
-
+  - name: carelink-app
+    newName: ghcr.io/txngjr/carelink-argocd
+    newTag: sha-7c78812
