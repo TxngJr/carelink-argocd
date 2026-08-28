@@ -62,20 +62,32 @@ async function initialize(db: Db) {
     db.collection('help_requests').createIndex({ status: 1, created_at: -1 }),
     db.collection('recommendations').createIndex({ status: 1, created_at: -1 }),
   ])
-
-  // Seed on startup if database is empty
-  await runDatabaseSeed(false).catch((err) => console.warn('Auto-seed check note:', err?.message || err))
 }
 
 export async function getDb(): Promise<CareLinkDb> {
   if (!globalMongo.__carelinkDbPromise) {
-    globalMongo.__carelinkDbPromise = (async () => {
+    const dbPromise = (async () => {
       const mongo = client()
       await mongo.connect()
       const db = mongo.db(dbName)
       await initialize(db)
       return db
     })()
+
+    // Keep the shared connection promise focused on connectivity/index setup. If
+    // connecting fails (for example while the Mongo replica set is electing),
+    // clear it so the next request/probe can retry instead of caching a rejection.
+    globalMongo.__carelinkDbPromise = dbPromise.catch((error) => {
+      globalMongo.__carelinkDbPromise = undefined
+      throw error
+    })
+
+    // Seed only after the DB promise has resolved. runDatabaseSeed() calls getDb(),
+    // so awaiting it inside initialize() created a self-referential promise and
+    // made /health hang until Kubernetes killed the pod.
+    void globalMongo.__carelinkDbPromise
+      .then(() => runDatabaseSeed(false))
+      .catch((err) => console.warn('Auto-seed check note:', err?.message || err))
   }
   return globalMongo.__carelinkDbPromise as Promise<CareLinkDb>
 }
