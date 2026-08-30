@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: carelink-config
+data:
+  MONGO_URI: mongodb://mongo-0.mongo:27017/?replicaSet=rs0
+  DB_NAME: carelink
+  APP_ENV: public_demo
+  DEVELOPMENT_LOGIN_PASSWORD: password123
+  NEXT_PUBLIC_APP_NAME: CareLink
+  DEMO_AUTH_RATE: "10"
+  DEMO_WRITE_RATE: "60"
+  INFUSION_MAX_CHAIRS: "100"
+  TZ: Asia/Bangkok

@@ -1,7 +1,8 @@
 'use client'
 
-import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { Maximize, RefreshCw, Volume2, VolumeX } from 'lucide-react'
+import React, { useEffect, useRef, useState } from 'react'
+import Image from 'next/image'
+import { Maximize, Volume2, VolumeX } from 'lucide-react'
 import { clientApi } from '@/lib/client'
 
 function playChime() {
@@ -40,39 +41,19 @@ function speakThai(text: string) {
 }
 
 export default function TvPage() {
-  const [board, setBoard] = useState<{ serving: Array<{ queue_no: string; station_code: string }>; waiting: Array<{ queue_no: string; station_code: string }> }>({
+  const [board, setBoard] = useState<{ serving: Array<{ queue_no: string; station_code: string }>; waiting: Array<{ queue_no: string; station_code: string }>; updated_at?: string }>({
     serving: [],
     waiting: [],
   })
   const [soundEnabled, setSoundEnabled] = useState(true)
   const lastCalledRef = useRef<string>('')
 
-  const loadTvData = useCallback(async () => {
-    try {
-      const data = await clientApi.getTvBoard() as { serving: Array<{ queue_no: string; station_code: string }>; waiting: Array<{ queue_no: string; station_code: string }> }
-      setBoard(data)
-
-      const latestServing = data.serving?.[0]
-      if (latestServing && latestServing.queue_no !== lastCalledRef.current) {
-        lastCalledRef.current = latestServing.queue_no
-        if (soundEnabled) {
-          playChime()
-          setTimeout(() => {
-            speakThai(`ขอเชิญหมายเลข ${latestServing.queue_no} ที่จุด ${latestServing.station_code} ค่ะ`)
-          }, 600)
-        }
-      }
-    } catch {
-      // Ignore
-    }
-  }, [soundEnabled])
-
   useEffect(() => {
     let active = true
     function fetchTv() {
       clientApi.getTvBoard().then((data) => {
         if (!active) return
-        const d = data as { serving: Array<{ queue_no: string; station_code: string }>; waiting: Array<{ queue_no: string; station_code: string }> }
+        const d = data as { serving: Array<{ queue_no: string; station_code: string }>; waiting: Array<{ queue_no: string; station_code: string }>; updated_at?: string }
         setBoard(d)
         const latestServing = d.serving?.[0]
         if (latestServing && latestServing.queue_no !== lastCalledRef.current) {
@@ -88,7 +69,7 @@ export default function TvPage() {
     }
     fetchTv()
     const timer = setInterval(fetchTv, 4000)
-    const es = new EventSource('/api/realtime/stream')
+    const es = new EventSource('/api/realtime/stream?scope=public')
     es.addEventListener('queue_called', fetchTv)
     es.addEventListener('queue_updated', fetchTv)
     return () => {
@@ -112,9 +93,9 @@ export default function TvPage() {
     <div className="tv-shell">
       <header className="tv-topbar">
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <img src="/logo-mark.svg" alt="CareLink" width={48} height={48} />
+          <Image src="/logo-mark.svg" alt="CareLink" width={48} height={48} priority />
           <div>
-            <h1>CareLink Public Queue Display</h1>
+            <h1>CareLink จอแสดงคิวสาธารณะ</h1>
             <span style={{ color: '#8fbdb4', fontSize: '.9rem' }}>ระบบแสดงผลและเรียกคิวอัตโนมัติประจำห้องพักคอย</span>
           </div>
         </div>
@@ -133,7 +114,7 @@ export default function TvPage() {
             onClick={toggleFullScreen}
             style={{ color: '#fff', background: 'rgba(255,255,255,.1)' }}
           >
-            <Maximize size={20} /> เต็มจอ (Full Screen)
+            <Maximize size={20} /> เต็มจอ
           </button>
         </div>
       </header>
@@ -142,7 +123,7 @@ export default function TvPage() {
         {/* Left Column: Now Serving Big Hero */}
         <section className="tv-card" style={{ background: 'rgba(255,255,255,.07)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span className="eyebrow" style={{ color: '#68d3be', fontSize: '1rem' }}>NOW SERVING · กำลังเรียกคิว</span>
+            <span className="eyebrow" style={{ color: '#68d3be', fontSize: '1rem' }}>กำลังเรียกคิว</span>
             <span className="status-pill flowing" style={{ fontSize: '.8rem' }}>เรียลไทม์</span>
           </div>
 
@@ -179,7 +160,7 @@ export default function TvPage() {
         {/* Right Column: Next in Queue */}
         <section className="tv-card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span className="eyebrow" style={{ color: '#a8c7df', fontSize: '1rem' }}>NEXT IN QUEUE · ลำดับคิวถัดไป</span>
+            <span className="eyebrow" style={{ color: '#a8c7df', fontSize: '1rem' }}>ลำดับคิวถัดไป</span>
             <span style={{ fontSize: '.85rem', color: '#88a8c2' }}>{board.waiting.length} คิวรอ</span>
           </div>
 
@@ -204,8 +185,8 @@ export default function TvPage() {
       </main>
 
       <footer style={{ display: 'flex', justifyContent: 'space-between', color: '#6c8a84', fontSize: '.85rem', borderTop: '1px solid rgba(255,255,255,.1)', paddingTop: 14 }}>
-        <span>โรงพยาบาลและศูนย์การแพทย์เฉพาะทาง AMIS DynaFlow</span>
-        <span>อัปเดตล่าสุด: {new Date().toLocaleTimeString('th-TH')}</span>
+        <span>ระบบสาธิตด้วยข้อมูลสังเคราะห์ ไม่แสดงชื่อหรือข้อมูลผู้ป่วย</span>
+        <span>อัปเดตล่าสุด: {board.updated_at ? new Date(board.updated_at).toLocaleTimeString('th-TH') : '—'}</span>
       </footer>
     </div>
   )

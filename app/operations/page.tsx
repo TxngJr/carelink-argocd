@@ -1,18 +1,9 @@
 'use client'
 
 import React, { useCallback, useEffect, useState } from 'react'
-import {
-  Activity,
-  AlertTriangle,
-  CheckCircle2,
-  Clock,
-  Flame,
-  PlusCircle,
-  RefreshCw,
-  Sparkles,
-  X,
-} from 'lucide-react'
+import { RefreshCw, Scale } from 'lucide-react'
 import { StaffShell } from '@/components/staff-shell'
+import { Modal } from '@/components/ui'
 import { clientApi } from '@/lib/client'
 import type { FlowEngineRecommendation, OperationsSnapshot, StationFlowStatus } from '@/lib/types'
 
@@ -23,6 +14,9 @@ export default function OperationsPage() {
   const [selectedStation, setSelectedStation] = useState<StationFlowStatus | null>(null)
   const [bottleneckNote, setBottleneckNote] = useState('')
   const [reporting, setReporting] = useState(false)
+  const [canMutate, setCanMutate] = useState(false)
+  const [decision, setDecision] = useState<{ recommendation: FlowEngineRecommendation; action: 'accept' | 'reject' } | null>(null)
+  const [decisionReason, setDecisionReason] = useState('')
 
   const loadData = useCallback(async () => {
     try {
@@ -60,13 +54,17 @@ export default function OperationsPage() {
     }
   }, [])
 
-  async function handleAccept(rec: FlowEngineRecommendation) {
-    await clientApi.acceptRecommendation(rec.id).catch(() => null)
-    await loadData()
-  }
+  useEffect(() => {
+    clientApi.getStaffMe().then((user) => setCanMutate(['admin', 'manager', 'operations'].includes(user.role))).catch(() => setCanMutate(false))
+  }, [])
 
-  async function handleReject(rec: FlowEngineRecommendation) {
-    await clientApi.rejectRecommendation(rec.id).catch(() => null)
+  async function handleDecision() {
+    if (!decision || decisionReason.trim().length < 3) return
+    const { recommendation, action } = decision
+    if (action === 'accept') await clientApi.acceptRecommendation(recommendation.id, recommendation.version || 1, decisionReason)
+    else await clientApi.rejectRecommendation(recommendation.id, recommendation.version || 1, decisionReason)
+    setDecision(null)
+    setDecisionReason('')
     await loadData()
   }
 
@@ -86,25 +84,25 @@ export default function OperationsPage() {
   return (
     <StaffShell role="manager" displayName="ผู้จัดการระบบการไหลเวียน">
       <div className="flowboard-container">
-        {/* KPI Header Grid */}
+        {error && <div className="inline-alert danger" role="alert">{error}</div>}
         <div className="queue-summary-grid">
           <div className="metric-card highlight">
             <span>ผู้ป่วยรับบริการสะสมวันนี้</span>
             <strong>{data?.kpis.total_patients_today || 0}</strong>
-            <small>Active ในระบบ: {data?.kpis.active_now || 0} คน</small>
+            <small>กำลังอยู่ในระบบ: {data?.kpis.active_now || 0} คน</small>
           </div>
           <div className="metric-card">
-            <span>เสร็จสิ้นการรักษา (Discharged)</span>
+            <span>เสร็จสิ้นการรับบริการ</span>
             <strong>{data?.kpis.completed_today || 0}</strong>
             <small>คน</small>
           </div>
           <div className="metric-card">
-            <span>เวลารอคอยเฉลี่ย (Avg Wait)</span>
+            <span>เวลารอคอยเฉลี่ย</span>
             <strong>{data?.kpis.avg_wait_min || 0}</strong>
             <small>นาทีต่อสถานี</small>
           </div>
           <div className="metric-card">
-            <span>จุดที่มีภาวะคอขวด (Bottlenecks)</span>
+            <span>จุดติดขัด</span>
             <strong style={{ color: (data?.kpis.bottleneck_station_count || 0) > 0 ? 'var(--crit)' : 'inherit' }}>
               {data?.kpis.bottleneck_station_count || 0}
             </strong>
@@ -112,15 +110,14 @@ export default function OperationsPage() {
           </div>
         </div>
 
-        {/* AI Recommendations Drawer / Banner */}
         {data?.recommendations && data.recommendations.length > 0 && (
           <section className="workspace-card" style={{ borderLeft: '5px solid #c8851a' }}>
             <div className="workspace-card-head" style={{ padding: '16px 20px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <Sparkles color="#c8851a" size={22} />
+                <Scale color="#c8851a" size={22} aria-hidden="true" />
                 <div>
-                  <span className="eyebrow" style={{ color: '#c8851a' }}>AMIS FLOW ENGINE RECOMMENDATIONS</span>
-                  <h3 style={{ margin: '2px 0 0' }}>คำแนะนำปรับสมดุลการไหลเวียน ({data.recommendations.length} รายการ)</h3>
+                  <span className="eyebrow" style={{ color: '#c8851a' }}>เครื่องมือช่วยตัดสินใจจากข้อมูลคิว</span>
+                  <h3 style={{ margin: '2px 0 0' }}>ข้อเสนอปรับสมดุลการไหลเวียน ({data.recommendations.length} รายการ)</h3>
                 </div>
               </div>
             </div>
@@ -142,27 +139,26 @@ export default function OperationsPage() {
                     <strong style={{ color: '#684507' }}>{rec.title}</strong>
                     <p style={{ margin: '3px 0 0', fontSize: '.82rem', color: '#825c1b' }}>{rec.reason}</p>
                   </div>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button className="button success" onClick={() => void handleAccept(rec)}>
+                  {canMutate && <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="button success" onClick={() => setDecision({ recommendation: rec, action: 'accept' })}>
                       {rec.action_label || 'ดำเนินการตามคำแนะนำ'}
                     </button>
-                    <button className="button danger-outline" onClick={() => void handleReject(rec)}>
+                    <button className="button danger-outline" onClick={() => setDecision({ recommendation: rec, action: 'reject' })}>
                       ปฏิเสธ
                     </button>
-                  </div>
+                  </div>}
                 </div>
               ))}
             </div>
           </section>
         )}
 
-        {/* 24 Stations Spatial / Grid Overview */}
         <section className="workspace-card">
           <div className="workspace-card-head">
             <div>
-              <span className="eyebrow">LIVE SPATIAL HOSPITAL BOARD</span>
-              <h2>ผังสถานะความหนาแน่น 24 สถานีบริการ</h2>
-              <p>ตรวจจับและแสดงสถานะ Flow อัตโนมัติ: Flowing (เขียว) / Building (ส้ม) / Bottleneck (แดง)</p>
+              <span className="eyebrow">สถานะจุดบริการล่าสุด</span>
+              <h2>ผังสถานะความหนาแน่น {data?.stations.length || 0} สถานีบริการ</h2>
+              <p>เกณฑ์เดียวกันทุกหน้า: ไหลลื่น / เริ่มหนาแน่น / จุดติดขัด / ว่างตามแผน</p>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button className="button secondary" onClick={() => void loadData()} disabled={loading}>
@@ -177,8 +173,8 @@ export default function OperationsPage() {
                 <article
                   key={station.code}
                   className={`station-flow-tile ${station.state}`}
-                  onClick={() => setSelectedStation(station)}
-                  style={{ cursor: 'pointer' }}
+                  onClick={() => canMutate && setSelectedStation(station)}
+                  style={{ cursor: canMutate ? 'pointer' : 'default' }}
                 >
                   <div className="station-tile-head">
                     <div>
@@ -187,7 +183,7 @@ export default function OperationsPage() {
                       <span>{station.floor}</span>
                     </div>
                     <span className={`status-pill ${station.state}`}>
-                      {station.state === 'bottleneck' ? 'คอขวด' : station.state === 'building' ? 'สะสม' : station.state === 'flowing' ? 'คล่องตัว' : 'ว่าง'}
+                      {station.state === 'bottleneck' ? 'จุดติดขัด' : station.state === 'building' ? 'เริ่มหนาแน่น' : station.state === 'flowing' ? 'ไหลลื่น' : 'ว่างตามแผน'}
                     </span>
                   </div>
 
@@ -201,11 +197,11 @@ export default function OperationsPage() {
                       <strong>{station.in_progress_count}/{station.capacity}</strong>
                     </div>
                     <div>
-                      <span>เวลารอประมาณ</span>
-                      <strong>{station.est_wait_min} นาที</strong>
+                      <span>เวลารอ P50 / P80</span>
+                      <strong>{station.est_wait_min} / {station.est_wait_p80_min} นาที</strong>
                     </div>
                     <div>
-                      <span>Throughput</span>
+                      <span>บริการเสร็จใน 1 ชม.</span>
                       <strong>{station.throughput_per_hour}/ชม.</strong>
                     </div>
                   </div>
@@ -215,45 +211,28 @@ export default function OperationsPage() {
           </div>
         </section>
 
-        {/* Bottleneck Report Modal */}
-        {selectedStation && (
-          <div
-            style={{
-              position: 'fixed',
-              inset: 0,
-              background: 'rgba(0,0,0,.45)',
-              display: 'grid',
-              placeItems: 'center',
-              zIndex: 100,
-              backdropFilter: 'blur(4px)',
-            }}
-          >
-            <div className="workspace-card" style={{ width: 'min(500px, 90%)', padding: 24 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-                <h3>รายงานสถานะ / ขอความช่วยเหลือ: {selectedStation.name} ({selectedStation.code})</h3>
-                <button className="icon-button" onClick={() => setSelectedStation(null)}><X size={18} /></button>
-              </div>
-              <p style={{ fontSize: '.85rem', color: 'var(--muted)' }}>
-                ผู้ป่วยรอ: {selectedStation.waiting_count} คน · ความจุ: {selectedStation.capacity} คน · เวลารอ: {selectedStation.est_wait_min} นาที
-              </p>
-              <label style={{ margin: '14px 0' }}>
-                <span>ข้อความแจ้งทีมศูนย์ปฏิบัติการ</span>
-                <textarea
-                  rows={3}
-                  value={bottleneckNote}
-                  onChange={(e) => setBottleneckNote(e.target.value)}
-                  placeholder="เช่น ผู้ป่วยเริ่มสะสมเกินเกณฑ์ ขอพยาบาลช่วยเปิดโต๊ะคัดกรองเพิ่ม"
-                />
-              </label>
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                <button className="button ghost" onClick={() => setSelectedStation(null)}>ยกเลิก</button>
-                <button className="button warning" onClick={() => void handleReportBottleneck()} disabled={reporting}>
-                  {reporting ? 'กำลังส่งรายงาน…' : 'ส่งรายงานคอขวด'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        <Modal open={Boolean(selectedStation)} title={selectedStation ? `รายงานสถานะ ${selectedStation.name} (${selectedStation.code})` : 'รายงานสถานะ'} onClose={() => setSelectedStation(null)} actions={<><button className="button ghost" onClick={() => setSelectedStation(null)}>ยกเลิก</button><button className="button warning" onClick={() => void handleReportBottleneck()} disabled={reporting}>{reporting ? 'กำลังส่งรายงาน…' : 'ส่งรายงานจุดติดขัด'}</button></>}>
+          {selectedStation && <><p>ผู้ป่วยรอ {selectedStation.waiting_count} คน · ความจุ {selectedStation.capacity} คน · P80 {selectedStation.est_wait_p80_min} นาที</p><label><span>เหตุผล/ข้อความถึงทีมศูนย์ปฏิบัติการ</span><textarea rows={3} value={bottleneckNote} onChange={(event) => setBottleneckNote(event.target.value)} placeholder="เช่น ผู้ป่วยเริ่มสะสมเกินเกณฑ์ ขอเปิดจุดบริการเพิ่ม" /></label></>}
+        </Modal>
+
+        <p className="inline-alert" role="status">
+          คำนวณล่าสุด {data?.generated_at ? new Date(data.generated_at).toLocaleString('th-TH') : '—'} · หน้าต่างข้อมูลย้อนหลัง {data?.data_window.days || 30} วัน ·
+          แต่ละสถานีใช้ประวัติจริงเมื่อมีอย่างน้อย 20 ตัวอย่าง มิฉะนั้นใช้ค่าตั้งต้นที่กำหนดไว้
+        </p>
+
+        <Modal
+          open={Boolean(decision)}
+          title={decision?.action === 'accept' ? 'ยืนยันดำเนินการตามข้อเสนอ' : 'ยืนยันปฏิเสธข้อเสนอ'}
+          onClose={() => { setDecision(null); setDecisionReason('') }}
+          actions={<>
+            <button className="button ghost" onClick={() => setDecision(null)}>ยกเลิก</button>
+            <button className="button primary" disabled={decisionReason.trim().length < 3} onClick={() => void handleDecision()}>บันทึกการตัดสินใจ</button>
+          </>}
+        >
+          <p>{decision?.recommendation.title}</p>
+          <label><span>เหตุผลของผู้ดำเนินการ <em>*</em></span><textarea rows={3} value={decisionReason} onChange={(event) => setDecisionReason(event.target.value)} /></label>
+          <small>ระบบจะบันทึกผู้ดำเนินการ เวลา เหตุผล และ version เพื่อการตรวจสอบย้อนหลัง</small>
+        </Modal>
       </div>
     </StaffShell>
   )

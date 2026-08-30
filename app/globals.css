@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+Thai:wght@400;500;600;700;800&display=swap');
+
 :root{
   --ink:#17302d;
   --muted:#657975;
@@ -26,11 +28,12 @@
   --shadow:0 24px 70px rgba(19,65,59,.1);
 }
 *{box-sizing:border-box}
-html,body{margin:0;min-height:100%;background:var(--canvas);color:var(--ink);font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI","Noto Sans Thai",sans-serif}
+html,body{margin:0;min-height:100%;background:var(--canvas);color:var(--ink);font-family:"Noto Sans Thai",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
 button,input,select,textarea{font:inherit}
 button{cursor:pointer}
 button:disabled{opacity:.55;cursor:not-allowed}
 a{color:inherit;text-decoration:none}
+.sr-only{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
 .eyebrow{display:inline-block;color:var(--brand2);font-weight:800;font-size:.7rem;letter-spacing:.15em;text-transform:uppercase}
 .eyebrow.light{color:#a8eee3}
 .brand-row,.sidebar-brand,.patient-brand,.patient-heading{display:flex;align-items:center;gap:11px}
@@ -86,13 +89,58 @@ label em{color:var(--danger);font-style:normal}
 .auth-side-copy h2{font-size:clamp(2.4rem,5vw,4.5rem);line-height:1.08;letter-spacing:-.055em;margin:14px 0 22px}
 .auth-side-copy p{color:#cbe4df;line-height:1.8}
 .auth-card{width:100%;max-width:540px;margin-left:auto;padding:34px;border-radius:28px;background:#fff;box-shadow:var(--shadow);border:1px solid #e3ece9}
+.auth-page.development-auth{grid-template-columns:minmax(260px,1fr) minmax(620px,900px);align-items:start;gap:clamp(30px,5vw,72px)}
+.development-login-card{max-width:900px}
 .auth-heading{margin:32px 0 25px}
 .auth-heading h1{margin:9px 0 10px;font-size:2rem;letter-spacing:-.035em}
 .auth-heading p{color:var(--muted);line-height:1.65;margin:0}
 .auth-form{display:grid;gap:16px}
 .auth-footer{display:flex;justify-content:center;gap:8px;flex-wrap:wrap;margin-top:20px;color:var(--muted);font-size:.86rem}
 .auth-footer a{color:var(--brand);font-weight:750;text-decoration:none}
-.demo-note{margin-top:24px;padding:13px 15px;border-radius:13px;background:#f5f8f7;display:flex;flex-wrap:wrap;gap:7px 15px;color:#62736f;font-size:.78rem}
+.auth-error{margin-bottom:18px}
+.development-login{margin-bottom:20px}
+.development-login-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:13px}
+.development-login-heading h2{margin:10px 0 2px;font-size:1.05rem;letter-spacing:-.015em}
+.development-login-heading p{margin:0;color:var(--muted);font-size:.78rem;line-height:1.55}
+.development-badge{width:max-content;min-height:27px;padding:0 9px;display:inline-flex;align-items:center;gap:6px;border-radius:999px;background:#e8f1fb;color:#14487f;border:1px solid #c7d9ec;font-size:.7rem;font-weight:800}
+.development-account-total{min-height:34px;display:flex;align-items:center;gap:7px;padding:0 10px;border-radius:8px;background:#f2f6f5;color:#536866;font-size:.72rem;font-weight:700;white-space:nowrap}
+.development-account-controls{display:grid;grid-template-columns:minmax(260px,1fr) 190px auto;align-items:center;gap:8px;margin-bottom:10px}
+.development-account-search{position:relative;display:block}.development-account-search svg{position:absolute;left:13px;top:50%;transform:translateY(-50%);color:#738582;pointer-events:none}.development-account-search input{padding-left:39px}
+.development-filter-total{padding:0 4px;color:#71827f;font-size:.7rem;white-space:nowrap;text-align:right}
+.development-account-table-wrap{max-height:540px;overflow:auto;border:1px solid #dce6e4;border-radius:11px;background:#fff}
+.development-account-table{width:100%;min-width:790px;border-collapse:separate;border-spacing:0;text-align:left}
+.development-account-table thead{position:sticky;top:0;z-index:2;background:#f3f7f6}
+.development-account-table th{padding:10px 11px;color:#627572;border-bottom:1px solid #dce6e4;font-size:.64rem;font-weight:800;white-space:nowrap}
+.development-account-table td{padding:10px 11px;border-bottom:1px solid #edf1f0;color:#4e6260;font-size:.72rem;line-height:1.45;vertical-align:middle}
+.development-account-table tbody tr:last-child td{border-bottom:0}.development-account-table tbody tr:hover td{background:#f8fbfa}.development-account-table tbody tr.selected td{background:#f0f6fc}
+.development-account-table td:first-child{min-width:150px}.development-account-table td:nth-child(2){width:115px}.development-account-table td:nth-child(3){min-width:170px}.development-account-table td:nth-child(4){min-width:235px}
+.development-account-table td strong{color:#1a302e;font-size:.76rem}.development-account-table code{display:inline-flex;padding:4px 7px;border-radius:6px;background:#f1f5f4;color:#14487f;font-size:.68rem}
+.development-account-table td small{display:block;margin-top:4px;color:#80908e;font-size:.62rem}.development-role-badge{display:inline-flex;width:max-content;padding:3px 7px;border-radius:999px;background:#e8f1fb;color:#14487f;border:1px solid #cbdced;font-size:.63rem;font-weight:750}
+.development-login-action{text-align:right;white-space:nowrap}.development-login-action .button{min-height:40px;padding:0 11px;border-radius:8px;font-size:.68rem}
+.development-table-message{height:110px!important;text-align:center!important;color:#748683!important}.development-table-message svg{display:inline-block;margin-right:8px;vertical-align:middle}
+.auth-separator{display:flex;align-items:center;gap:10px;margin:20px 0;color:#82918f;font-size:.69rem;white-space:nowrap}
+.auth-separator::before,.auth-separator::after{content:"";height:1px;background:#e1e8e7;flex:1}
+
+@media(max-width:980px){
+  .auth-page,.auth-page.development-auth{grid-template-columns:1fr;background:#eff5fb;padding:34px 22px}
+  .auth-side-copy{display:none}
+  .auth-card{margin:auto}
+}
+@media(max-width:1120px){
+  .auth-page.development-auth{grid-template-columns:1fr;background:#eff5fb;padding:34px 22px}
+  .development-auth .auth-side-copy{display:none}
+  .development-auth .auth-card{margin:auto}
+}
+@media(max-width:560px){
+  .auth-page,.auth-page.development-auth{padding:18px 12px;align-items:start}
+  .auth-card{padding:24px 18px;border-radius:20px}
+  .development-login-heading{display:grid}
+  .development-account-total{width:max-content}
+  .development-account-controls{grid-template-columns:1fr}
+  .development-filter-total{text-align:left}
+  .development-account-table-wrap{max-height:480px}
+  .auth-separator{white-space:normal;text-align:center}
+}
 
 /* Staff Shell & Navigation */
 .staff-shell{min-height:100vh;display:grid;grid-template-columns:260px 1fr}
@@ -174,13 +222,6 @@ label em{color:var(--danger);font-style:normal}
 .data-table th{background:#f4f8f7;padding:10px 14px;color:#45605b;font-weight:750;border-bottom:1px solid var(--line)}
 .data-table td{padding:12px 14px;border-bottom:1px solid var(--line)}
 .data-table tr:hover td{background:#fafdfc}
-
-/* Chemo Chair Grid */
-.chair-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:14px}
-.chair-card{border:1px solid var(--line);border-radius:16px;padding:16px;background:#fff;display:grid;gap:8px}
-.chair-card.infusing{border-color:#b5dfd4;background:#f6fcfb}
-.chair-card.nurse-call{border-color:#f2a6a6;background:#fff5f5;animation:pulse 2s infinite}
-@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(204,63,63,.4)}70%{box-shadow:0 0 0 10px rgba(204,63,63,0)}100%{box-shadow:0 0 0 0 rgba(204,63,63,0)}}
 
 /* Public TV Board */
 .tv-shell{min-height:100vh;background:#0b1e1b;color:#fff;padding:28px 36px;display:grid;grid-template-rows:auto 1fr auto;gap:24px}
@@ -333,4 +374,9 @@ label em{color:var(--danger);font-style:normal}
   .sidebar-user{display:none}
   .staff-main{padding:20px 14px 60px}
   .patient-bottom-nav{font-size:.55rem}
+}
+
+button,.button,.icon-button,.patient-bottom-nav button{min-height:44px}.icon-button{min-width:44px}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
 }

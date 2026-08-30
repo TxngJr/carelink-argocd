@@ -1,9 +1,10 @@
 import type { Metadata, Viewport } from 'next'
 import './globals.css'
+import './staff.css'
 
 export const metadata: Metadata = {
   title: { default: 'CareLink', template: '%s | CareLink' },
-  description: 'CareLink patient flow and queue management prototype',
+  description: 'CareLink ระบบสาธิตจัดการเส้นทางและคิวด้วยข้อมูลสังเคราะห์',
   applicationName: 'CareLink',
   manifest: '/manifest.webmanifest',
 }

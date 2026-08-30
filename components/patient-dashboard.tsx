@@ -1,21 +1,16 @@
 'use client'
 
 import React, { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
+import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import {
-  Activity,
-  AlertTriangle,
   Bell,
   Calendar,
   Check,
-  CheckCircle2,
   Clock,
   HelpCircle,
   Home,
   LogOut,
-  MapPin,
-  MessageSquare,
-  Plus,
   Send,
   ShieldAlert,
   Sparkles,
@@ -25,12 +20,9 @@ import { clientApi } from '@/lib/client'
 import { stationMap } from '@/lib/stations'
 import type {
   Appointment,
-  AppointmentMeasurements,
   HelpRequestSubmission,
   Journey,
   Notice,
-  Previsit,
-  PrevisitSubmission,
   PublicUser,
   TriageSession,
 } from '@/lib/types'
@@ -305,7 +297,7 @@ function PrevisitTab({ onSaved }: { onSaved: () => Promise<void> }) {
 }
 
 // --------------------------------------------------------------------
-// 3. AI Triage Tab Component
+// 3. Rule-based symptom screening tab
 // --------------------------------------------------------------------
 function TriageTab({ onSaved }: { onSaved: () => Promise<void> }) {
   const [session, setSession] = useState<TriageSession | null>(null)
@@ -355,9 +347,9 @@ function TriageTab({ onSaved }: { onSaved: () => Promise<void> }) {
   return (
     <div className="patient-section">
       <div className="patient-section-title">
-        <span className="eyebrow">AI SYMPTOM TRIAGE</span>
-        <h1>คัดกรองอาการด้วย AI</h1>
-        <p>สนทนากับระบบคัดกรองอัจฉริยะเพื่อประเมินระดับความเร่งด่วนเบื้องต้น</p>
+        <span className="eyebrow">การตอบกลับตามกฎจำลอง</span>
+        <h1>คัดกรองอาการเบื้องต้น</h1>
+        <p>ระบบตอบกลับตามกฎจำลองเพื่อรวบรวมข้อมูลเบื้องต้น ไม่วินิจฉัยโรคและไม่แทนบุคลากรทางการแพทย์</p>
       </div>
 
       <div className="patient-card">
@@ -374,7 +366,7 @@ function TriageTab({ onSaved }: { onSaved: () => Promise<void> }) {
           {(session?.messages || []).map((msg, index) => (
             <div key={msg.id || index} className={`chat-bubble ${msg.role}`}>
               <div style={{ fontSize: '.7rem', opacity: 0.7, marginBottom: 2 }}>
-                {msg.role === 'patient' ? 'คุณ' : 'CareLink AI Assistant'}
+              {msg.role === 'patient' ? 'คุณ' : 'CareLink ระบบตอบกลับจำลอง'}
               </div>
               <div>{msg.content}</div>
             </div>
@@ -383,7 +375,7 @@ function TriageTab({ onSaved }: { onSaved: () => Promise<void> }) {
 
         {session?.status === 'submitted' ? (
           <div className="inline-alert success">
-            ✓ ข้อมูลคัดกรองนี้ถูกส่งให้พยาบาลที่จุดซักประวัติแล้ว
+            <Check size={16} aria-hidden="true" /> ข้อมูลคัดกรองนี้ถูกส่งให้พยาบาลที่จุดซักประวัติแล้ว
           </div>
         ) : (
           <form onSubmit={handleSend} style={{ display: 'grid', gap: 10 }}>
@@ -407,7 +399,7 @@ function TriageTab({ onSaved }: { onSaved: () => Promise<void> }) {
                 onClick={() => void handleSubmitToNurse()}
                 disabled={busy}
               >
-                <Sparkles size={16} /> ส่งบทสรุปคัดกรองให้พยาบาล
+                <Send size={16} aria-hidden="true" /> ส่งบทสรุปคัดกรองให้พยาบาล
               </button>
             )}
           </form>
@@ -727,7 +719,7 @@ export function PatientDashboard({ displayName }: { displayName: string }) {
     fetchPatientData()
     const timer = setInterval(fetchPatientData, 8000)
 
-    const es = new EventSource('/api/realtime/stream')
+    const es = new EventSource('/api/realtime/stream?scope=patient')
     es.addEventListener('notification_created', fetchPatientData)
     es.addEventListener('queue_called', fetchPatientData)
     es.addEventListener('encounter_moved', fetchPatientData)
@@ -761,7 +753,7 @@ export function PatientDashboard({ displayName }: { displayName: string }) {
     <div className="patient-shell">
       <header className="patient-header">
         <div className="patient-brand">
-          <img src="/logo-mark.svg" width={38} height={38} alt="" />
+          <Image src="/logo-mark.svg" width={38} height={38} alt="" />
           <div>
             <strong>CareLink</strong>
             <span>Patient Journey 2.0</span>
@@ -781,7 +773,7 @@ export function PatientDashboard({ displayName }: { displayName: string }) {
       <main className="patient-main">
         {loading ? (
           <div className="patient-loading">
-            <img src="/logo-mark.svg" width={54} height={54} alt="" />
+            <Image src="/logo-mark.svg" width={54} height={54} alt="" />
             <span>กำลังโหลดข้อมูลการรับบริการของคุณ…</span>
           </div>
         ) : (

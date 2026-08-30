@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { clientApi } from '@/lib/client'
 import { buildDoctorRoute, OPTIONAL_ROUTE_CODES, stationMap } from '@/lib/stations'
@@ -171,7 +172,7 @@ export function StaffDashboard({ role, displayName }: Props) {
 
   return <div className="staff-shell">
     <aside className="staff-sidebar">
-      <div className="sidebar-brand"><img src="/logo-mark.svg" alt="" width={38} height={38} /><div><strong>CareLink</strong><span>Clinical Flow</span></div></div>
+      <div className="sidebar-brand"><Image src="/logo-mark.svg" alt="" width={38} height={38} /><div><strong>CareLink</strong><span>Clinical Flow</span></div></div>
       <nav>
         {role === 'nurse' ? <>
           <button className={activeTab === 'requests' ? 'active' : ''} onClick={() => setNurseTab('requests')}><span>01</span>คำขอนัดใหม่<em>{requests.length}</em></button>

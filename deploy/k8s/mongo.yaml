@@ -31,6 +31,8 @@ spec:
         app.kubernetes.io/component: mongo
     spec:
       terminationGracePeriodSeconds: 30
+      securityContext:
+        seccompProfile: { type: RuntimeDefault }
       containers:
         - name: mongo
           image: mongo:7
@@ -70,6 +72,9 @@ spec:
           resources:
             requests: { cpu: 100m, memory: 256Mi }
             limits: { cpu: 1000m, memory: 1Gi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
           volumeMounts:
             - name: mongo-data
               mountPath: /data/db

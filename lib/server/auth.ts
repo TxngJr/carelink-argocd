@@ -2,37 +2,62 @@ import 'server-only'
 import { cookies } from 'next/headers'
 import type { NextRequest, NextResponse } from 'next/server'
 import { SignJWT, jwtVerify } from 'jose'
+import { randomUUID } from 'node:crypto'
 import { ObjectId } from 'mongodb'
 import type { Role } from '@/lib/types'
 
 export const SESSION_COOKIE = 'carelink_session'
-const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'carelink-demo-jwt-secret-denmannsolutions-2026')
 
 export type Session = {
   userId: string
   role: Role
   displayName: string
+  sessionId: string
+  demoSessionId: string
 }
 
-export async function signSession(session: Session) {
-  return new SignJWT({ role: session.role, display_name: session.displayName })
+const SESSION_ROLES: Role[] = [
+  'admin', 'manager', 'operations', 'nurse', 'doctor', 'physician', 'registration',
+  'vitals_staff', 'lab_staff', 'pharmacy_staff', 'infusion_staff', 'chemo_staff', 'patient',
+]
+
+function normalizeRole(value: unknown): Role | null {
+  const role = String(value || '') as Role
+  if (!SESSION_ROLES.includes(role)) return null
+  return role === 'chemo_staff' ? 'infusion_staff' : role
+}
+
+function sessionSecret() {
+  const configured = process.env.JWT_SECRET
+  if (configured) return new TextEncoder().encode(configured)
+  if (process.env.NODE_ENV === 'production') throw new Error('ต้องกำหนด JWT_SECRET ก่อนเปิดระบบ production')
+  return new TextEncoder().encode('carelink-local-development-secret')
+}
+
+export async function signSession(session: Omit<Session, 'sessionId' | 'demoSessionId'> & { sessionId?: string }) {
+  const demoSessionId = session.sessionId || randomUUID()
+  return new SignJWT({ role: session.role, display_name: session.displayName, demo_session_id: demoSessionId })
     .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
     .setSubject(session.userId)
+    .setJti(demoSessionId)
     .setIssuedAt()
     .setExpirationTime('12h')
-    .sign(secret)
+    .sign(sessionSecret())
 }
 
 export async function verifySessionToken(token?: string | null): Promise<Session | null> {
   if (!token) return null
   try {
-    const { payload } = await jwtVerify(token, secret, { algorithms: ['HS256'] })
-    if (!payload.sub || !ObjectId.isValid(payload.sub)) return null
-    if (!['nurse', 'doctor', 'patient'].includes(String(payload.role))) return null
+    const { payload } = await jwtVerify(token, sessionSecret(), { algorithms: ['HS256'] })
+    if (!payload.sub || !payload.jti || !ObjectId.isValid(payload.sub)) return null
+    const role = normalizeRole(payload.role)
+    if (!role) return null
     return {
       userId: payload.sub,
-      role: payload.role as Role,
+      role,
       displayName: String(payload.display_name || ''),
+      sessionId: payload.jti,
+      demoSessionId: String(payload.demo_session_id || payload.jti),
     }
   } catch {
     return null

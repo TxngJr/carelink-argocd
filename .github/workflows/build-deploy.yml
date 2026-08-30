@@ -30,10 +30,35 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 22
-      - run: npm install
+      - run: npm ci
       - run: npm run typecheck
       - run: npm run lint
+      - run: npm test
       - run: npm run build
+      - name: Start MongoDB replica set for browser journeys
+        run: |
+          export JWT_SECRET="$(openssl rand -hex 32)"
+          docker compose up -d --wait mongo
+          docker compose run --rm mongo-init
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - uses: azure/setup-kubectl@v4
+      - run: kubectl kustomize deploy/k8s > /dev/null
+      - name: Container live-health smoke test
+        shell: bash
+        run: |
+          docker build -t carelink-smoke .
+          trap 'docker stop carelink-smoke > /dev/null 2>&1 || true' EXIT
+          docker run -d --rm --name carelink-smoke -p 3000:3000 -e JWT_SECRET="$(openssl rand -hex 32)" carelink-smoke
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:3000/health/live > /dev/null; then exit 0; fi
+            sleep 1
+          done
+          docker logs carelink-smoke
+          exit 1
+      - name: Stop browser-test services
+        if: always()
+        run: JWT_SECRET="$(openssl rand -hex 32)" docker compose down -v
 
   build:
     if: github.event_name != 'pull_request'

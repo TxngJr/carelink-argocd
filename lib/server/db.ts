@@ -8,8 +8,10 @@ import {
   type FindOneAndUpdateOptions,
 } from 'mongodb'
 import { runDatabaseSeed } from '@/lib/server/seed'
+import { runCareLinkMigrations } from '@/lib/server/migrations'
+import { developmentLoginEnabled, ensureDevelopmentAccounts } from '@/lib/server/development-accounts'
 
-const uri = process.env.MONGO_URI || 'mongodb://localhost:27018/?replicaSet=rs0'
+const uri = process.env.MONGO_URI || 'mongodb://localhost:27018/?replicaSet=rs0&directConnection=true'
 const dbName = process.env.DB_NAME || 'carelink'
 
 type CareLinkCollection = Collection<Document> & {
@@ -45,6 +47,7 @@ function client() {
 async function initialize(db: Db) {
   await Promise.all([
     db.collection('users').createIndex({ username: 1 }, { unique: true }),
+    db.collection('users').createIndex({ is_development_account: 1, development_account_order: 1 }),
     db.collection('patients').createIndex({ phone: 1 }, { unique: true, sparse: true }),
     db.collection('patients').createIndex({ hn: 1 }, { unique: true }),
     db.collection('stations').createIndex({ code: 1 }, { unique: true }),
@@ -56,12 +59,41 @@ async function initialize(db: Db) {
     db.collection('vitals').createIndex({ encounter_id: 1, created_at: -1 }),
     db.collection('clinical_notes').createIndex({ encounter_id: 1 }),
     db.collection('chemo_sessions').createIndex({ patient_id: 1, status: 1 }),
-    db.collection('radiation_sessions').createIndex({ machine_code: 1, scheduled_time: 1 }),
+    db.collection('infusion_chairs').createIndex({ code: 1 }, { unique: true }),
+    db.collection('infusion_templates').createIndex({ code: 1 }, { unique: true }),
+    db.collection('infusion_sessions').createIndex({ chair_id: 1, status: 1 }),
+    db.collection('infusion_sessions').createIndex({ encounter_id: 1, status: 1 }),
+    db.collection('infusion_sessions').createIndex(
+      { chair_id: 1 },
+      { unique: true, name: 'one_active_infusion_per_chair', partialFilterExpression: { status: { $in: ['reserved', 'active', 'paused', 'due'] } } },
+    ),
+    db.collection('infusion_sessions').createIndex(
+      { encounter_id: 1 },
+      { unique: true, name: 'one_active_infusion_per_encounter', partialFilterExpression: { encounter_id: { $exists: true }, status: { $in: ['reserved', 'active', 'paused', 'due'] } } },
+    ),
+    db.collection('infusion_sessions').createIndex({ legacy_session_id: 1 }, { unique: true, sparse: true }),
+    db.collection('infusion_events').createIndex({ session_id: 1, created_at: -1 }),
+    db.collection('infusion_events').createIndex({ created_at: -1 }),
+    db.collection('schema_migrations').createIndex({ key: 1 }, { unique: true }),
+    db.collection('migration_locks').createIndex({ key: 1 }, { unique: true }),
+    db.collection('resource_limits').createIndex({ key: 1 }, { unique: true }),
     db.collection('triage_sessions').createIndex({ patient_id: 1, status: 1 }),
     db.collection('previsits').createIndex({ patient_id: 1 }),
     db.collection('help_requests').createIndex({ status: 1, created_at: -1 }),
     db.collection('recommendations').createIndex({ status: 1, created_at: -1 }),
+    db.collection('recommendation_decisions').createIndex({ recommendation_id: 1, decided_at: -1 }),
+    db.collection('clinical_order_events').createIndex({ order_id: 1, created_at: -1 }),
+    db.collection('audit_requests').createIndex({ demo_session_id: 1, created_at: -1 }),
+    db.collection('rate_limits').createIndex({ expires_at: 1 }, { expireAfterSeconds: 0 }),
+    db.collection('realtime_events').createIndex({ created_at: 1 }, { expireAfterSeconds: 86_400 }),
+    db.collection('realtime_events').createIndex({ id: 1 }, { unique: true }),
   ])
+  // Passing this initialized Db explicitly avoids the recursive getDb() call
+  // that previously deadlocked startup while still completing data setup
+  // before the application reports readiness.
+  await runDatabaseSeed(false, db).catch((err) => console.warn('Auto-seed check note:', err?.message || err))
+  await runCareLinkMigrations(db)
+  if (developmentLoginEnabled()) await ensureDevelopmentAccounts(db)
 }
 
 export async function getDb(): Promise<CareLinkDb> {
@@ -73,7 +105,6 @@ export async function getDb(): Promise<CareLinkDb> {
       await initialize(db)
       return db
     })()
-
     // Keep the shared connection promise focused on connectivity/index setup. If
     // connecting fails (for example while the Mongo replica set is electing),
     // clear it so the next request/probe can retry instead of caching a rejection.
@@ -81,13 +112,6 @@ export async function getDb(): Promise<CareLinkDb> {
       globalMongo.__carelinkDbPromise = undefined
       throw error
     })
-
-    // Seed only after the DB promise has resolved. runDatabaseSeed() calls getDb(),
-    // so awaiting it inside initialize() created a self-referential promise and
-    // made /health hang until Kubernetes killed the pod.
-    void globalMongo.__carelinkDbPromise
-      .then(() => runDatabaseSeed(false))
-      .catch((err) => console.warn('Auto-seed check note:', err?.message || err))
   }
   return globalMongo.__carelinkDbPromise as Promise<CareLinkDb>
 }

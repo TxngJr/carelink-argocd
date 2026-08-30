@@ -1,89 +1,118 @@
-# CareLink — Single Next.js Prototype
+# CareLink — Staff Portal & Infusion Lounge
 
-CareLink is a graduation-project prototype for appointment, patient-flow, queue, and patient-journey management. The repository has been consolidated into **one full-stack Next.js application**. The previous Go backend, Vite staff frontend, and Expo patient application are no longer separate deployable applications.
+CareLink เป็น educational prototype สำหรับจัดการนัดหมาย patient flow คิว และเส้นทางรับบริการ โดยรวม Staff Portal, Patient Portal, TV และ Kiosk ไว้ใน Next.js application เดียว
+
+> ระบบนี้ไม่ใช่ medical device และ Template Infusion ที่ให้มาเป็นข้อมูลสาธิตเท่านั้น หน่วยงานต้องกำหนดและทบทวน clinical protocol จริงก่อนใช้งาน
+>
+> Public Sandbox ใช้ข้อมูลสังเคราะห์ร่วมกัน ผู้ทดสอบหลายคนอาจใช้บัญชีเดียวกัน และข้อมูลสาธิตจะคงอยู่จนกว่าผู้ดูแล cluster จะสั่งรีเซ็ต
 
 ## Architecture
 
-- **Next.js App Router + TypeScript** — staff UI, patient mobile-first Web App, and API Route Handlers in one project.
-- **MongoDB** — retains the existing CareLink collections and snake_case document fields so existing prototype data remains compatible.
-- **HttpOnly cookie session** — browser authentication, while API handlers still accept the legacy Bearer JWT format.
-- **Role isolation** — `nurse`, `doctor`, and `patient` are checked server-side before page/API access.
-- **Single Docker image** — `ghcr.io/txngjr/carelink-argocd:<sha>`.
+- Next.js App Router + TypeScript สำหรับ UI และ API Route Handlers
+- MongoDB replica set สำหรับข้อมูล workflow, optimistic state transition และ unique active-session constraints
+- HttpOnly cookie session พร้อมรองรับ legacy Bearer JWT
+- Server-Sent Events (SSE) สำหรับสถานะคิว เก้าอี้ readiness และ session แบบ realtime
+- Staff UI ภาษาไทยด้วย Noto Sans Thai, ตัวเลขด้วย IBM Plex Mono และ Lucide icons
+- Docker image เดียว: `ghcr.io/txngjr/carelink-argocd-web:<sha>`
 
-## Portals
+## Staff workspaces
 
-| Portal | URL | Purpose |
+| Workspace | URL | ผู้ใช้งานหลัก |
 |---|---|---|
-| Staff | `/login/nurse` | Nurse + doctor login; role redirects to the correct workspace |
-| Patient | `/login/patient` | Patient login |
-| Patient registration | `/register/patient` | Create patient account |
-| Nurse | `/nurse` | Appointment proposal, arrival/check-in, non-PC queues |
-| Doctor | `/doctor` | Appointment confirmation, PC queues, post-consult route |
-| Patient app | `/patient` | Appointment request, queue journey, notifications, profile |
+| Operations | `/operations` | Manager / Admin |
+| Schedule | `/operations/schedule` | Manager / Operations |
+| Registration | `/registration` | Registration / Nurse |
+| Vitals | `/vitals` | Vitals staff / Nurse |
+| Intake | `/intake` | Nurse |
+| Physician | `/physician` | Doctor |
+| Laboratory | `/lab` | Lab staff |
+| Pharmacy | `/pharmacy` | Pharmacy staff |
+| Infusion Lounge | `/infusion` | Infusion staff / Manager / Admin |
 
-Prototype staff accounts are seeded on first database connection:
+`/nurse` และ `/doctor` redirect ไป workspace หลัก ส่วน `/chemo` redirect ไป `/infusion` เพื่อรองรับ bookmark เดิม ระบบฉายแสงไม่มี route, UI หรือ API ที่สร้างข้อมูลใหม่แล้ว แต่ collection `radiation_sessions` จะไม่ถูกลบ
 
-- `nurse` / `password123`
-- `doctor` / `password123`
+## Infusion Lounge
 
-Patients register with phone number + password. Existing users are not overwritten by the seed.
+- เก้าอี้เริ่มต้น 8 ตัว จำกัดรวม 100 ตัวโดยค่าเริ่มต้น (ปรับด้วย `INFUSION_MAX_CHAIRS`) และ soft-deactivate เพื่อรักษาประวัติ
+- 4 แท็บ: ภาพรวม, คิว, ประวัติ และตั้งค่า (Manager/Admin)
+- Doctor สร้าง Infusion order พร้อม Template, planned time และ duration override ได้ ระบบเติม `INFUSION` ใน route โดยไม่สร้างซ้ำ
+- readiness ใช้ active order, lab verified และ medication ready ตาม Template
+- คง FIFO ของคิวที่ยังไม่พร้อม และเสนอคิวพร้อมลำดับถัดไปพร้อม audit reason
+- call จะจองเก้าอี้ทันที; countdown เริ่มเมื่อรับตัวและเริ่ม phase
+- รองรับ pause/resume, ปรับเวลา, จบก่อนเวลา, recall และ No-show พร้อมเหตุผลและ audit trail
+- แต่ละ phase หยุดที่ `00:00` และต้องยืนยันก่อนเริ่มขั้นถัดไป; phase สุดท้ายไม่ปล่อยเก้าอี้อัตโนมัติ
+- Server timestamp เป็น source of truth และ client ชดเชย clock drift หลัง refresh/reconnect
 
-## Preserved core workflow
+Template สาธิต:
 
-1. Patient registers/logs in and submits a chief complaint plus optional measurements.
-2. Nurse reviews the request and proposes an appointment time.
-3. Doctor confirms the time and assigns `PC`, `PC2`, `PC3`, or `PC4`.
-4. On the appointment day, the patient reports arrival.
-5. Nurse confirms check-in; CareLink creates an active encounter and the first `NPR-###` queue.
-6. Default route: `NPR → EV → VM → MHT → PCx`.
-7. Doctor defines the post-PC route. It must finish at `DH`, or `HA → IPW`.
-8. Queue actions remain: call, start, recall, skip/no-show, requeue, complete-and-advance.
-9. Patient sees current queue, queue ahead, estimated wait, next station, route timeline, and notifications.
+- น้ำเกลือทั่วไป: เตรียม 5 นาที, ให้สารน้ำ 60 นาที, สังเกต 10 นาที
+- ยาทางหลอดเลือด: เตรียม 10 นาที, ให้ยา 60 นาที, สังเกต 15 นาที
+- เคมีบำบัด: Pre-med 30 นาที, ให้ยา 120 นาที, สังเกต 30 นาที
+
+## Accounts
+
+ฐานข้อมูลว่างจะสร้างบัญชีสาธิต 36 บัญชี (9 บทบาท บทบาทละ 4 บัญชี) พร้อม one-click login บนหน้าเจ้าหน้าที่ รหัสผ่านสำหรับทดสอบคือ `password123` รายการจริงมาจาก `lib/development-accounts.ts` จึงไม่ต้องดูแลตัวเลขซ้ำใน UI หรือ README
+
+Role `chemo_staff` เดิมถูก migrate เป็น `infusion_staff` และ legacy session cookie จะถูก normalize ระหว่างเปลี่ยนผ่าน ส่วน `rt_staff` จะถูก deactivate
+
+## Migration and data preservation
+
+Migration `2026-08-infusion-lounge-v1` ทำงานแบบ idempotent เมื่อเริ่ม application:
+
+- แปลง role, station, encounter route, queue และ `chemo_sessions` ไป schema Infusion ใหม่
+- เก็บ legacy identifiers และไม่ลบ collection ต้นทาง `chemo_sessions`
+- mark ขั้นตอนฉายแสงเดิมเป็น `skipped` พร้อม migration reason
+- ไม่ลบหรือเปิด write API ให้ `radiation_sessions`
+- หยุดพร้อม error เมื่อพบ active chair/session หรือ encounter conflict แทนการเขียนทับ
+
+ควรสำรอง MongoDB ก่อน deploy migration ไปยัง environment ที่มีข้อมูลจริง
 
 ## Local run
 
-### Docker (recommended)
-
 ```bash
-docker compose up --build
+JWT_SECRET="$(openssl rand -base64 48)" docker compose up --build
 ```
 
-Open `http://localhost:3000`.
-
-### Node
-
-Use Node 22 (minimum supported by this repository is Node 20.9):
+เปิด `http://localhost:3000` หรือรันแบบ Node:
 
 ```bash
-npm install
+npm ci
 cp .env.example .env.local
 npm run dev
 ```
 
-When running Mongo through `docker compose`, use the host URI from `.env.example`.
+ระบบใช้ timezone `Asia/Bangkok`; duration input เป็นนาทีและ countdown แสดง `ชั่วโมง:นาที:วินาที`
 
-## Checks
+## Acceptance checks
 
 ```bash
 npm run typecheck
 npm run lint
+npm test
 npm run build
+export JWT_SECRET="$(openssl rand -base64 48)"
+docker compose up -d --wait mongo
+docker compose run --rm mongo-init
+npx playwright install chromium
+npm run test:e2e
+docker compose down
+unset JWT_SECRET
 ```
 
-`GET /health` checks the Next.js service and Mongo connection.
+- `GET /health/live` ตรวจ process ของ Next.js โดยไม่ผูกกับฐานข้อมูล
+- `GET /health/ready` ตรวจความพร้อมของ MongoDB
+- `GET /health` คงไว้เพื่อความเข้ากันได้และตรวจทั้ง application กับ MongoDB
 
 ## Deployment
 
-`deploy/k8s` now deploys only:
+`deploy/k8s` ประกอบด้วย CareLink 2 replicas, MongoDB StatefulSet replica set, NetworkPolicy, PodDisruptionBudget และ MongoDB backup รายคืนบน PVC (เก็บประมาณ 7 วัน) ส่วน Argo CD sync จาก `deploy/k8s` บน branch `main` GitHub Actions จะตรวจ typecheck, lint แบบ zero-warning, unit tests, build, Kustomize render และ container live-health ก่อนสร้าง immutable image
 
-- one CareLink Next.js `Deployment` + `Service`
-- MongoDB `StatefulSet`
-- prototype `Secret`
+JWT secret ไม่อยู่ใน Git ต้องสร้างหรือเชื่อม external secret ชื่อ `carelink-secrets` ก่อน sync:
 
-The checked-in `secret.yaml` intentionally contains demo values because this repository is a classroom prototype. Do not copy that practice to a real healthcare production system.
+```bash
+kubectl -n carelink create secret generic carelink-secrets \
+  --from-literal=JWT_SECRET="$(openssl rand -base64 48)" \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
 
-Argo CD continues to sync `deploy/k8s` from `main`. GitHub Actions builds one immutable image and updates the Kustomize tag.
-
-## Important prototype note
-
-This is an educational prototype, not a production medical device or a hospital information system. Do not use real patient-identifiable or clinical data without a proper security/privacy review, access logging, backup strategy, secrets management, and compliance controls.
+Argo CD ตั้ง `Prune=false` ชั่วคราวเพื่อไม่ลบ Secret เดิมระหว่างหมุนค่า หลังตรวจว่า deployment ใช้ `carelink-secrets`, session ใหม่ทำงาน และ pod พร้อมทั้ง 2 replicas แล้ว ให้ลบ Secret เดิม `carelink-config` ที่ชนิด Secret และนำ `Prune=false` ออก การติดตั้งจริงยังต้องมี encryption at rest, access logging และ privacy/compliance review ก่อนใช้ข้อมูลผู้ป่วยจริง

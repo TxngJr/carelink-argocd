@@ -1,6 +1,8 @@
 import 'server-only'
+import { randomUUID } from 'node:crypto'
+import type { RealtimeEnvelope } from '@/lib/types'
 
-type EventListener = (event: { channel: string; type: string; payload: unknown; timestamp: string }) => void
+type EventListener = (event: RealtimeEnvelope) => void
 
 class GlobalEventBus {
   private listeners: Set<EventListener> = new Set()
@@ -13,7 +15,8 @@ class GlobalEventBus {
   }
 
   broadcast(channel: string, type: string, payload: unknown) {
-    const event = {
+    const event: RealtimeEnvelope = {
+      id: randomUUID(),
       channel,
       type,
       payload,
@@ -26,6 +29,11 @@ class GlobalEventBus {
         console.error('Error delivering event to listener', err)
       }
     }
+    void import('@/lib/server/db').then(async ({ getDb }) => {
+      const db = await getDb()
+      await db.collection('realtime_events').insertOne({ ...event, created_at: new Date(event.timestamp) })
+    }).catch((error) => console.warn('บันทึกเหตุการณ์เรียลไทม์ไม่สำเร็จ:', error instanceof Error ? error.message : error))
+    return event
   }
 
   get listenerCount(): number {
