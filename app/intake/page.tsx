@@ -1,13 +1,15 @@
 'use client'
 
 import React, { useState } from 'react'
-import { AlertOctagon, CheckCircle2, Flame, HeartPulse, Send, Sparkles, Stethoscope, User } from 'lucide-react'
+import { CircleAlert, CircleCheck, CircleDot } from 'lucide-react'
 import { StaffShell } from '@/components/staff-shell'
 import { QueueWorkspace } from '@/components/queue-workspace'
 import { clientApi } from '@/lib/client'
+import type { Encounter } from '@/lib/types'
 
 export default function IntakePage() {
   const [encounterId, setEncounterId] = useState('')
+  const [encounter, setEncounter] = useState<Encounter | null>(null)
   const [complaint, setComplaint] = useState('')
   const [history, setHistory] = useState('')
   const [triageLevel, setTriageLevel] = useState('normal')
@@ -20,7 +22,7 @@ export default function IntakePage() {
   async function handleSaveAssessment(e: React.FormEvent) {
     e.preventDefault()
     if (!encounterId) {
-      setMessage('กรุณากรอก Encounter ID ของผู้ป่วย')
+      setMessage('กรุณาเลือกผู้ป่วยจากคิว MHT ด้านล่าง')
       return
     }
     setBusy(true)
@@ -45,6 +47,12 @@ export default function IntakePage() {
     }
   }
 
+  async function selectEncounter(id: string) {
+    setEncounterId(id)
+    setEncounter(await clientApi.getEncounterDetail(id))
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
   return (
     <StaffShell role="nurse" displayName="พยาบาลวิชาชีพ จุดซักประวัติ">
       <div style={{ display: 'grid', gap: 20 }}>
@@ -66,10 +74,7 @@ export default function IntakePage() {
             </div>
 
             <form style={{ padding: '0 20px 24px', display: 'grid', gap: 14 }} onSubmit={handleSaveAssessment}>
-              <label>
-                <span>Encounter ID ผู้ป่วย <em>*</em></span>
-                <input required value={encounterId} onChange={(e) => setEncounterId(e.target.value)} placeholder="เช่น 66a..." />
-              </label>
+              <div className="inline-alert" role="status">{encounter ? <><strong>{encounter.patient?.display_name || 'ผู้ป่วย'} · HN {encounter.patient?.hn || '—'}</strong><br />คิว {encounter.current_queue_no} · {encounter.current_station}</> : 'เลือกผู้ป่วยจากคิว MHT ด้านล่างก่อนบันทึก'}</div>
 
               <label>
                 <span>อาการสำคัญที่มาโรงพยาบาล (Chief Complaint) <em>*</em></span>
@@ -124,17 +129,18 @@ export default function IntakePage() {
           <div style={{ display: 'grid', gap: 14 }}>
             <div className="workspace-card" style={{ padding: 20 }}>
               <h3 style={{ marginTop: 0 }}>เกณฑ์การคัดแยกผู้ป่วย (Triage Categories)</h3>
+              <p className="inline-alert warning">ข้อความและเกณฑ์ด้านล่างเป็นตัวอย่างเพื่อการศึกษา ไม่ใช่ protocol ทางคลินิกจริง</p>
               <div style={{ display: 'grid', gap: 10, fontSize: '.82rem' }}>
                 <div style={{ padding: 10, borderRadius: 10, background: '#fdf3f3', border: '1px solid #fad3d3' }}>
-                  <strong style={{ color: 'var(--crit)' }}>🔴 Level 1-2 (Resuscitation / Emergency):</strong>
+                  <strong style={{ color: 'var(--crit)' }}><CircleAlert size={16} aria-hidden="true" /> ระดับ 1–2 (วิกฤต/ฉุกเฉิน)</strong>
                   <p style={{ margin: '3px 0 0', color: '#681c1c' }}>หมดสติ, หายใจลำบากวิกฤต, เจ็บหน้าอกรุนแรง ส่งพบแพทย์ทันที</p>
                 </div>
                 <div style={{ padding: 10, borderRadius: 10, background: '#fdf8ea', border: '1px solid #fae7ba' }}>
-                  <strong style={{ color: 'var(--warn)' }}>🟡 Level 3 (Urgent):</strong>
+                  <strong style={{ color: 'var(--warn)' }}><CircleDot size={16} aria-hidden="true" /> ระดับ 3 (เร่งด่วน)</strong>
                   <p style={{ margin: '3px 0 0', color: '#684507' }}>ไข้สูงในผู้ป่วยมะเร็ง, ปวดรุนแรง Pain Score ≥ 7, อาเจียนต่อเนื่อง</p>
                 </div>
                 <div style={{ padding: 10, borderRadius: 10, background: '#f2f8f6', border: '1px solid #d1e8e2' }}>
-                  <strong style={{ color: 'var(--ok)' }}>🟢 Level 4-5 (Non-urgent / Routine):</strong>
+                  <strong style={{ color: 'var(--ok)' }}><CircleCheck size={16} aria-hidden="true" /> ระดับ 4–5 (ทั่วไป)</strong>
                   <p style={{ margin: '3px 0 0', color: '#164c3e' }}>มาตามนัดตรวจติดตามทั่วไป, รับยาเดิม, สัญญาณชีพปกติ</p>
                 </div>
               </div>
@@ -143,7 +149,7 @@ export default function IntakePage() {
         </div>
 
         {/* Station Queue Workspace for Nurse */}
-        <QueueWorkspace role="nurse" />
+        <QueueWorkspace role="nurse" stationCodes={['MHT']} onSelectEncounter={(id) => void selectEncounter(id)} />
       </div>
     </StaffShell>
   )

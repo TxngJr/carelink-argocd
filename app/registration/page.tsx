@@ -1,15 +1,13 @@
 'use client'
 
 import React, { useState } from 'react'
-import { CheckCircle2, ClipboardCheck, Search, ShieldCheck, UserCheck, UserPlus } from 'lucide-react'
+import { UserPlus } from 'lucide-react'
 import { StaffShell } from '@/components/staff-shell'
 import { QueueWorkspace } from '@/components/queue-workspace'
 import { clientApi } from '@/lib/client'
-import type { Patient } from '@/lib/types'
 
 export default function RegistrationPage() {
-  const [activeTab, setActiveTab] = useState<'queue' | 'register' | 'search'>('queue')
-  const [hn, setHn] = useState('')
+  const [activeTab, setActiveTab] = useState<'queue' | 'register'>('queue')
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
   const [birthDate, setBirthDate] = useState('1990-01-01')
@@ -24,8 +22,8 @@ export default function RegistrationPage() {
     setError('')
     setSuccess('')
     try {
-      await clientApi.patientRegister(name, phone, birthDate, 'password123')
-      setSuccess(`ลงทะเบียนผู้ป่วยใหม่ ${name} สำเร็จ (รหัสผ่านเริ่มต้น: password123)`)
+      await clientApi.registerPatientByStaff({ display_name: name, phone, birth_date: birthDate, insurance_type: insurance })
+      setSuccess(`ลงทะเบียนผู้ป่วยใหม่ ${name} และบันทึกข้อมูลสิทธิจำลองสำเร็จ`)
       setName('')
       setPhone('')
     } catch (cause) {
@@ -42,7 +40,7 @@ export default function RegistrationPage() {
           <div>
             <span className="eyebrow">REGISTRATION & ELIGIBILITY WORKSPACE</span>
             <h2>จุดลงทะเบียนและตรวจสอบสิทธิการรักษา (NPR / EV)</h2>
-            <p>ออกบัตรคิว ตรวจสอบสิทธิ สปสช./ประกันสังคม/กรมบัญชีกลาง และส่งผู้ป่วยไปวัดสัญญาณชีพ (VM)</p>
+            <p>ออกบัตรคิวและบันทึกข้อมูลสิทธิจำลองโดยเจ้าหน้าที่ ก่อนส่งผู้ป่วยไปวัดสัญญาณชีพ (VM)</p>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button className={`button ${activeTab === 'queue' ? 'primary' : 'ghost'}`} onClick={() => setActiveTab('queue')}>
@@ -55,7 +53,7 @@ export default function RegistrationPage() {
         </div>
 
         {activeTab === 'queue' ? (
-          <QueueWorkspace role="nurse" />
+          <QueueWorkspace role="nurse" stationCodes={['NPR', 'EV']} />
         ) : (
           <div className="workspace-card" style={{ maxWidth: 640 }}>
             <div className="workspace-card-head">
@@ -79,7 +77,7 @@ export default function RegistrationPage() {
               </div>
 
               <label>
-                <span>สิทธิการรักษาพยาบาล</span>
+                <span>ข้อมูลสิทธิจำลอง/บันทึกโดยเจ้าหน้าที่</span>
                 <select value={insurance} onChange={(e) => setInsurance(e.target.value)}>
                   <option value="UC (บัตรทอง)">UC (หลักประกันสุขภาพแห่งชาติ / บัตรทอง)</option>
                   <option value="SSS (ประกันสังคม)">SSS (กองทุนประกันสังคม)</option>

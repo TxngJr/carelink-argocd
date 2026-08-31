@@ -49,13 +49,7 @@ export const STATIONS: StationDefinition[] = [
   { code: 'TD', name: 'วินิจฉัยและวางแผนการรักษา', floor: 'ชั้น 2', room: 'ห้องประชุมแผนก', averageServiceMin: 20, capacity: 5, category: 'clinical', pos: [1130, 320], description: 'Tumor Board และแผนการรักษาระยะยาว' },
 
   // Floor 3: Specialized Treatments
-  { code: 'CHEMO', name: 'คลินิกเคมีบำบัด', floor: 'ชั้น 3', room: 'ศูนย์เคมีบำบัด', averageServiceMin: 30, capacity: 12, category: 'treatment', pos: [830, 420], description: 'ให้ยาเคมีบำบัดแบบ Day Care' },
-  { code: 'CHEMO_PRE', name: 'เตรียมความพร้อมเคมีบำบัด', floor: 'ชั้น 3', room: 'ห้อง 301', averageServiceMin: 15, capacity: 8, category: 'treatment', pos: [770, 420], description: 'ตรวจผลเลือดและให้ยาแก้แพ้ก่อนเคมีบำบัด' },
-  { code: 'CHEMO_INF', name: 'ห้องให้ยาเคมีบำบัด', floor: 'ชั้น 3', room: 'Day Care Lounge', averageServiceMin: 45, capacity: 12, category: 'treatment', pos: [890, 420], description: 'เก้าอี้และเตียงให้ยาเคมีบำบัด' },
-  { code: 'BRA', name: 'รังสีรักษาระยะใกล้ (Brachytherapy)', floor: 'ชั้น 3', room: 'ห้องใส่แร่ 310', averageServiceMin: 25, capacity: 5, category: 'treatment', pos: [1010, 560], description: 'การใส่แร่รักษาเฉพาะจุด' },
-  { code: 'RT_SIM', name: 'จำลองการฉายรังสี (RT-Sim)', floor: 'ชั้น 3', room: 'ห้อง CT Simulator', averageServiceMin: 30, capacity: 4, category: 'treatment', pos: [650, 560], description: 'ทำแผนที่และหน้ากากจำลองการฉายรังสี' },
-  { code: 'RT_L1', name: 'เครื่องฉายรังสี Linac 1', floor: 'ชั้น 3', room: 'ห้องเครื่อง Linac 1', averageServiceMin: 20, capacity: 6, category: 'treatment', pos: [770, 560], description: 'เครื่องเร่งอนุภาคฉายรังสีห้อง 1' },
-  { code: 'RT_L2', name: 'เครื่องฉายรังสี Linac 2', floor: 'ชั้น 3', room: 'ห้องเครื่อง Linac 2', averageServiceMin: 20, capacity: 6, category: 'treatment', pos: [890, 560], description: 'เครื่องเร่งอนุภาคฉายรังสีห้อง 2' },
+  { code: 'INFUSION', name: 'ห้องให้สารน้ำและยาทางหลอดเลือด', floor: 'ชั้น 3', room: 'Infusion Lounge', averageServiceMin: 75, capacity: 8, category: 'treatment', pos: [830, 420], description: 'น้ำเกลือ ยาทางหลอดเลือด และเคมีบำบัดแบบ Day Care' },
 
   // Inpatient / Exit
   { code: 'IPW', name: 'หอผู้ป่วยใน', floor: 'อาคารผู้ป่วยใน', room: 'วอร์ด 4-7', averageServiceMin: 10, capacity: 20, category: 'exit', pos: [1360, 420], description: 'รับตัวเข้านอนพักรักษาในโรงพยาบาล' },
@@ -65,7 +59,7 @@ export const PC_CODES = new Set(['PC', 'PC2', 'PC3', 'PC4'])
 export const BASE_ROUTE = ['NPR', 'EV', 'VM', 'MHT'] as const
 export const OPTIONAL_ROUTE_CODES = new Set([
   'XR', 'CT', 'MRI', 'IR', 'LAB', 'LABC', 'HEM', 'SUR', 'GYN', 'ENT', 'OST',
-  'CHEMO', 'CHEMO_PRE', 'CHEMO_INF', 'BRA', 'RT_SIM', 'RT_L1', 'RT_L2', 'RC', 'TD', 'PD',
+  'INFUSION', 'RC', 'TD', 'PD',
 ])
 
 export const stationMap = new Map(STATIONS.map((station) => [station.code, station]))

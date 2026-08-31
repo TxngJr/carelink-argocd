@@ -1,9 +1,10 @@
 'use client'
 
 import React, { useEffect, useState } from 'react'
-import { CheckCircle2, FlaskConical, Play, RefreshCw, Send, TestTube } from 'lucide-react'
+import { RefreshCw } from 'lucide-react'
 import { StaffShell } from '@/components/staff-shell'
 import { QueueWorkspace } from '@/components/queue-workspace'
+import { Modal } from '@/components/ui'
 import { clientApi } from '@/lib/client'
 import type { ClinicalOrder } from '@/lib/types'
 
@@ -14,6 +15,8 @@ export default function LabPage() {
   const [resultValues, setResultValues] = useState('WBC 6.8, Hb 13.2, Plt 240,000 (Normal)')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
+  const [verifyOrder, setVerifyOrder] = useState<ClinicalOrder | null>(null)
+  const [verifyReason, setVerifyReason] = useState('ตรวจทานผลและข้อมูลอ้างอิงครบถ้วน')
 
   async function loadLabQueue() {
     setLoading(true)
@@ -38,27 +41,37 @@ export default function LabPage() {
     return () => { active = false }
   }, [])
 
-  async function handleCollect(orderId: string) {
+  async function handleCollect(order: ClinicalOrder) {
     setBusy(true)
     try {
-      await clientApi.collectLabSample(orderId)
+      await clientApi.collectLabSample(order.id, order.version || 1)
       await loadLabQueue()
     } finally {
       setBusy(false)
     }
   }
 
-  async function handleSaveResults(orderId: string) {
+  async function handleSaveResults(order: ClinicalOrder) {
     setBusy(true)
     try {
-      await clientApi.saveLabResults(orderId, { summary: resultValues, verified_at: new Date() })
-      await clientApi.verifyLabResults(orderId)
+      await clientApi.saveLabResults(order.id, order.version || 1, { summary: resultValues })
       setSelectedOrder(null)
-      setMessage('บันทึกและยืนยันผลการตรวจทางห้องปฏิบัติการสำเร็จ')
+      setMessage('บันทึกผลแล้ว กรุณาให้เจ้าหน้าที่อีกคนตรวจยืนยัน')
       await loadLabQueue()
     } finally {
       setBusy(false)
     }
+  }
+
+  async function handleVerify() {
+    if (!verifyOrder) return
+    setBusy(true)
+    try {
+      await clientApi.verifyLabResults(verifyOrder.id, verifyOrder.version || 1, verifyReason)
+      setVerifyOrder(null)
+      setMessage('ตรวจยืนยันผลการตรวจทางห้องปฏิบัติการสำเร็จ')
+      await loadLabQueue()
+    } finally { setBusy(false) }
   }
 
   return (
@@ -109,20 +122,19 @@ export default function LabPage() {
                         {ord.items.filter((i) => i.type === 'lab').map((i) => i.name).join(', ')}
                       </td>
                       <td>
-                        <span className={`status-pill ${ord.status === 'in_progress' ? 'flowing' : 'building'}`}>
-                          {ord.status === 'in_progress' ? 'เก็บตัวอย่างแล้ว' : 'รอเก็บสิ่งส่งตรวจ'}
+                        <span className={`status-pill ${ord.lab_status === 'results_recorded' ? 'flowing' : 'building'}`}>
+                          {ord.lab_status === 'results_recorded' ? 'รอตรวจยืนยัน' : ord.lab_status === 'sample_collected' ? 'เก็บตัวอย่างแล้ว' : 'รอเก็บตัวอย่าง'}
                         </span>
                       </td>
                       <td>
                         <div style={{ display: 'flex', gap: 6 }}>
-                          {ord.status !== 'in_progress' && (
-                            <button className="button secondary" style={{ minHeight: 32 }} onClick={() => void handleCollect(ord.id)} disabled={busy}>
+                          {(!ord.lab_status || ord.lab_status === 'ordered') && (
+                            <button className="button secondary" onClick={() => void handleCollect(ord)} disabled={busy}>
                               เก็บสิ่งส่งตรวจ
                             </button>
                           )}
-                          <button className="button primary" style={{ minHeight: 32 }} onClick={() => setSelectedOrder(ord)}>
-                            กรอกผลแล็บ
-                          </button>
+                          {ord.lab_status === 'sample_collected' && <button className="button primary" onClick={() => setSelectedOrder(ord)}>บันทึกผล</button>}
+                          {ord.lab_status === 'results_recorded' && <button className="button success" onClick={() => setVerifyOrder(ord)}>ตรวจยืนยัน</button>}
                         </div>
                       </td>
                     </tr>
@@ -133,29 +145,13 @@ export default function LabPage() {
           </div>
         </div>
 
-        {/* Enter Results Modal */}
-        {selectedOrder && (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'grid', placeItems: 'center', zIndex: 100 }}>
-            <div className="workspace-card" style={{ width: 'min(540px, 92%)', padding: 24 }}>
-              <h3>กรอกผลการตรวจชันสูตร: Order #{selectedOrder.id.slice(-6).toUpperCase()}</h3>
-              <p style={{ fontSize: '.85rem', color: 'var(--muted)' }}>
-                รายการ: {selectedOrder.items.filter((i) => i.type === 'lab').map((i) => i.name).join(', ')}
-              </p>
-              <label style={{ margin: '14px 0' }}>
-                <span>ผลการตรวจและค่าอ้างอิงปกติ (Results Summary)</span>
-                <textarea rows={4} value={resultValues} onChange={(e) => setResultValues(e.target.value)} />
-              </label>
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                <button className="button ghost" onClick={() => setSelectedOrder(null)}>ยกเลิก</button>
-                <button className="button success" onClick={() => void handleSaveResults(selectedOrder.id)} disabled={busy}>
-                  {busy ? 'กำลังบันทึก…' : 'ยืนยันผลแล็บ (Sign-off)'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        <Modal open={Boolean(selectedOrder)} title={selectedOrder ? `บันทึกผลตรวจ #${selectedOrder.id.slice(-6).toUpperCase()}` : 'บันทึกผลตรวจ'} onClose={() => setSelectedOrder(null)} actions={<><button className="button ghost" onClick={() => setSelectedOrder(null)}>ยกเลิก</button><button className="button success" onClick={() => selectedOrder && void handleSaveResults(selectedOrder)} disabled={busy}>{busy ? 'กำลังบันทึก…' : 'บันทึกผลเพื่อรอตรวจยืนยัน'}</button></>}>
+          {selectedOrder && <><p>รายการ: {selectedOrder.items.filter((item) => item.type === 'lab').map((item) => item.name).join(', ')}</p><label><span>ผลการตรวจและค่าอ้างอิง</span><textarea rows={4} value={resultValues} onChange={(event) => setResultValues(event.target.value)} /></label></>}
+        </Modal>
 
-        <QueueWorkspace role="nurse" />
+        <Modal open={Boolean(verifyOrder)} title="ตรวจยืนยันผลแล็บ" onClose={() => setVerifyOrder(null)} actions={<><button className="button ghost" onClick={() => setVerifyOrder(null)}>ยกเลิก</button><button className="button success" onClick={() => void handleVerify()} disabled={busy || verifyReason.trim().length < 3}>ยืนยันผล</button></>}><p>ผู้ตรวจยืนยันต้องเป็นคนละคนกับผู้บันทึกผล ระบบจะบันทึกผู้ดำเนินการและ version</p><label><span>เหตุผล/บันทึกการตรวจทาน</span><textarea rows={3} value={verifyReason} onChange={(event) => setVerifyReason(event.target.value)} /></label></Modal>
+
+        <QueueWorkspace role="nurse" stationCodes={['LAB', 'LABC']} />
       </div>
     </StaffShell>
   )

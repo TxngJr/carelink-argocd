@@ -2,11 +2,26 @@ import 'server-only'
 import bcrypt from 'bcryptjs'
 import { ObjectId, type Document } from 'mongodb'
 import { BASE_ROUTE, OPTIONAL_ROUTE_CODES, PC_CODES, STATIONS, stationMap } from '@/lib/stations'
+import { stationAllowed } from '@/lib/access-control'
+import { toPublicTvQueueItem } from '@/lib/public-dto'
 import { getDb } from '@/lib/server/db'
 import { broadcast } from '@/lib/server/events'
+import {
+  adaptFlowPlan,
+  buildBaselinePlan,
+  buildFlowEstimate,
+  classifyFlowState,
+  FLOW_HISTORY_WINDOW_DAYS,
+  minutesBetween,
+  simulateNewArrivalWait,
+} from '@/lib/flow-engine'
 import type {
+  ActivePatientFlow,
   AppointmentMeasurements,
+  FlowPlanSegment,
+  FlowScheduleSlot,
   HelpRequestSubmission,
+  OperationsInsights,
   OrderItem,
   PrevisitSubmission,
   Role,
@@ -54,6 +69,16 @@ function bangkokDateKey(date = new Date()) {
   }).formatToParts(date)
   const pick = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value || ''
   return `${pick('year')}-${pick('month')}-${pick('day')}`
+}
+
+function bangkokDayRange(date = new Date()) {
+  const key = bangkokDateKey(date)
+  const start = new Date(`${key}T00:00:00+07:00`)
+  return { start, end: new Date(start.getTime() + 24 * 60 * 60 * 1000), key }
+}
+
+function bangkokHour(date: Date) {
+  return new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Bangkok', hour: '2-digit', hour12: false }).format(date).padStart(2, '0')
 }
 
 export async function counter(collection: string, key: string) {
@@ -120,7 +145,7 @@ export async function authenticate(username: string, password: string, requiredR
   return user
 }
 
-export async function registerPatient(displayName: string, phone: string, birthDate: string, password: string) {
+export async function registerPatient(displayName: string, phone: string, birthDate: string, password: string, insuranceType = 'UC (บัตรทอง)') {
   const db = await getDb()
   const name = displayName.trim()
   const cleanPhone = phone.trim()
@@ -149,8 +174,8 @@ export async function registerPatient(displayName: string, phone: string, birthD
     phone: cleanPhone,
     province: 'กรุงเทพมหานคร',
     is_out_province: false,
-    insurance_type: 'UC (บัตรทอง)',
-    eligibility_status: 'valid',
+    insurance_type: insuranceType.trim() || 'ไม่ระบุสิทธิ',
+    eligibility_status: 'demo_recorded',
     allergies: [],
     chronic_conditions: [],
     created_at: now,
@@ -176,6 +201,12 @@ export async function registerPatient(displayName: string, phone: string, birthD
     throw error
   }
   return db.collection('users').findOne({ _id: userId })
+}
+
+export async function registerPatientByStaff(displayName: string, phone: string, birthDate: string, insuranceType: string) {
+  const user = await registerPatient(displayName, phone, birthDate, process.env.DEVELOPMENT_LOGIN_PASSWORD || 'password123', insuranceType)
+  if (!user?.patient_id) throw new DomainError('ลงทะเบียนผู้ป่วยไม่สำเร็จ', 'REGISTRATION_ERROR', 500)
+  return (await getDb()).collection('patients').findOne({ _id: user.patient_id })
 }
 
 export async function getUser(userId: string) {
@@ -399,12 +430,19 @@ export async function cancelByStaff(id: string, reason: string) {
   broadcast('appointments', 'appointment_cancelled', { id })
 }
 
-function routeSteps(codes: string[]) {
-  return codes.map((station_code) => ({
+function routeSteps(codes: string[], startsAt = new Date()) {
+  const baseline = buildBaselinePlan({
+    stationCodes: codes,
+    startsAt,
+    durationFor: (code) => stationMap.get(code)?.averageServiceMin || 10,
+  })
+  return baseline.map((segment) => ({
     id: new ObjectId(),
-    station_code,
+    station_code: segment.station_code,
     status: 'pending',
     estimated_wait_min: 0,
+    baseline_start_at: new Date(segment.baseline_start_at),
+    baseline_end_at: new Date(segment.baseline_end_at),
   }))
 }
 
@@ -425,12 +463,13 @@ async function enqueue(encounterId: ObjectId, patientId: ObjectId, stationCode: 
     rank: now,
     call_count: 0,
     skip_count: 0,
+    version: 1,
     created_at: now,
     updated_at: now,
   }
   await db.collection('queue_items').insertOne(row)
   broadcast(`station:${stationCode}`, 'queue_updated', row)
-  broadcast('tv', 'queue_updated', row)
+  broadcast('tv', 'queue_updated', { station_code: stationCode, queue_no: row.queue_no, status: row.status })
   return row
 }
 
@@ -519,7 +558,7 @@ export async function callNext(stationCode: string, staffId: string) {
   const now = new Date()
   const row = await (await getDb()).collection('queue_items').findOneAndUpdate(
     { station_code: stationCode, status: 'waiting' },
-    { $set: { status: 'called', assigned_staff_id: objectId(staffId), called_at: now, updated_at: now }, $inc: { call_count: 1 } },
+    { $set: { status: 'called', assigned_staff_id: objectId(staffId), called_at: now, updated_at: now }, $inc: { call_count: 1, version: 1 } },
     { sort: { rank: 1, created_at: 1 }, returnDocument: 'after' }
   )
   if (!row) throw new DomainError('ไม่มีคิวรอ', 'EMPTY_QUEUE', 404)
@@ -530,12 +569,12 @@ export async function callNext(stationCode: string, staffId: string) {
   return row
 }
 
-export async function startQueue(stationCode: string, itemId: string, staffId: string) {
+export async function startQueue(stationCode: string, itemId: string, staffId: string, version: number) {
   const now = new Date()
   const db = await getDb()
   const row = await db.collection('queue_items').findOneAndUpdate(
-    { _id: objectId(itemId), station_code: stationCode, status: { $in: ['waiting', 'called'] } },
-    { $set: { status: 'in_progress', assigned_staff_id: objectId(staffId), started_at: now, updated_at: now } },
+    { _id: objectId(itemId), station_code: stationCode, status: { $in: ['waiting', 'called'] }, version },
+    { $set: { status: 'in_progress', assigned_staff_id: objectId(staffId), started_at: now, updated_at: now }, $inc: { version: 1 } },
     { returnDocument: 'after' }
   )
   if (!row) throw new DomainError('ไม่สามารถเริ่มคิวนี้ได้', 'INVALID_STATE', 409)
@@ -548,10 +587,10 @@ export async function startQueue(stationCode: string, itemId: string, staffId: s
   return row
 }
 
-export async function recallQueue(stationCode: string, itemId: string, staffId?: string) {
+export async function recallQueue(stationCode: string, itemId: string, staffId: string, version: number) {
   const row = await (await getDb()).collection('queue_items').findOneAndUpdate(
-    { _id: objectId(itemId), station_code: stationCode, status: { $in: ['called', 'in_progress'] } },
-    { $set: { updated_at: new Date() }, $inc: { call_count: 1 } },
+    { _id: objectId(itemId), station_code: stationCode, status: { $in: ['called', 'in_progress'] }, version },
+    { $set: { updated_at: new Date() }, $inc: { call_count: 1, version: 1 } },
     { returnDocument: 'after' }
   )
   if (!row) throw new DomainError('ไม่พบคิวที่เรียกอยู่', 'NOT_FOUND', 404)
@@ -562,10 +601,10 @@ export async function recallQueue(stationCode: string, itemId: string, staffId?:
   return row
 }
 
-export async function skipQueue(stationCode: string, itemId: string, staffId?: string) {
+export async function skipQueue(stationCode: string, itemId: string, staffId: string, version: number) {
   const row = await (await getDb()).collection('queue_items').findOneAndUpdate(
-    { _id: objectId(itemId), station_code: stationCode, status: { $in: ['waiting', 'called'] } },
-    { $set: { status: 'no_show', updated_at: new Date() }, $inc: { skip_count: 1 } },
+    { _id: objectId(itemId), station_code: stationCode, status: { $in: ['waiting', 'called'] }, version },
+    { $set: { status: 'no_show', updated_at: new Date() }, $inc: { skip_count: 1, version: 1 } },
     { returnDocument: 'after' }
   )
   if (!row) throw new DomainError('ไม่พบคิว', 'NOT_FOUND', 404)
@@ -574,11 +613,11 @@ export async function skipQueue(stationCode: string, itemId: string, staffId?: s
   return row
 }
 
-export async function requeue(stationCode: string, itemId: string, staffId?: string) {
+export async function requeue(stationCode: string, itemId: string, staffId: string, version: number) {
   const now = new Date()
   const row = await (await getDb()).collection('queue_items').findOneAndUpdate(
-    { _id: objectId(itemId), station_code: stationCode, status: 'no_show' },
-    { $set: { status: 'waiting', rank: now, updated_at: now }, $unset: { called_at: '', assigned_staff_id: '' } },
+    { _id: objectId(itemId), station_code: stationCode, status: 'no_show', version },
+    { $set: { status: 'waiting', rank: now, updated_at: now }, $unset: { called_at: '', assigned_staff_id: '' }, $inc: { version: 1 } },
     { returnDocument: 'after' }
   )
   if (!row) throw new DomainError('ไม่พบคิว', 'NOT_FOUND', 404)
@@ -587,11 +626,12 @@ export async function requeue(stationCode: string, itemId: string, staffId?: str
   return row
 }
 
-export async function completeQueue(stationCode: string, itemId: string, staffId?: string) {
+export async function completeQueue(stationCode: string, itemId: string, staffId: string, version: number) {
   const db = await getDb()
   const item = await db.collection('queue_items').findOne({ _id: objectId(itemId), station_code: stationCode })
   if (!item) throw new DomainError('ไม่พบคิว', 'NOT_FOUND', 404)
-  if (item.status === 'completed') return { queue_item: item, next_queue_item: null }
+  if (item.status === 'completed') throw new DomainError('คิวนี้ถูกปิดไปแล้ว กรุณารีเฟรช', 'VERSION_CONFLICT', 409)
+  if (Number(item.version) !== version) throw new DomainError('ข้อมูลคิวถูกแก้ไขแล้ว กรุณารีเฟรช', 'VERSION_CONFLICT', 409)
   if (!['called', 'in_progress'].includes(item.status)) throw new DomainError('คิวนี้ยังไม่พร้อมเสร็จสิ้น', 'INVALID_STATE', 409)
   const encounter = await db.collection('encounters').findOne({ _id: item.encounter_id, status: 'active' })
   if (!encounter) throw new DomainError('ไม่พบ visit ที่กำลังดำเนินการ', 'NOT_FOUND', 404)
@@ -604,11 +644,11 @@ export async function completeQueue(stationCode: string, itemId: string, staffId
   const now = new Date()
   route[index] = { ...route[index], status: 'completed', completed_at: now }
   const changed = await db.collection('queue_items').updateOne(
-    { _id: item._id, status: item.status },
-    { $set: { status: 'completed', completed_at: now, updated_at: now } }
+    { _id: item._id, status: item.status, version },
+    { $set: { status: 'completed', completed_at: now, updated_at: now }, $inc: { version: 1 } }
   )
   if (!changed.modifiedCount) throw new DomainError('สถานะคิวเปลี่ยนแปลงแล้ว กรุณารีเฟรช', 'INVALID_STATE', 409)
-  const completed = { ...item, status: 'completed', completed_at: now, updated_at: now }
+  const completed = { ...item, status: 'completed', completed_at: now, updated_at: now, version: version + 1 }
   await auditQueue(completed, 'complete_station', staffId)
 
   if (index === route.length - 1) {
@@ -631,7 +671,7 @@ export async function completeQueue(stationCode: string, itemId: string, staffId
   try {
     next = await enqueue(encounter._id, encounter.patient_id, nextCode, encounter.priority || 'normal', queueNo)
   } catch (error) {
-    await db.collection('queue_items').updateOne({ _id: item._id }, { $set: { status: item.status }, $unset: { completed_at: '' } })
+    await db.collection('queue_items').updateOne({ _id: item._id, version: version + 1 }, { $set: { status: item.status }, $unset: { completed_at: '' }, $inc: { version: -1 } })
     throw error
   }
   await db.collection('encounters').updateOne(
@@ -728,7 +768,7 @@ export async function saveAssessment(encounterId: string, assessmentData: Record
   return doc
 }
 
-export async function markUrgent(encounterId: string, staffId?: string) {
+export async function markUrgent(encounterId: string) {
   return updateEncounterPriority(encounterId, 'urgent')
 }
 
@@ -765,6 +805,16 @@ export async function createOrders(encounterId: string, orderData: { items: Orde
   const encounter = await db.collection('encounters').findOne({ _id: encId })
   if (!encounter) throw new DomainError('ไม่พบ visit', 'NOT_FOUND', 404)
 
+  const infusionTemplateIds = [...new Set((orderData.items || [])
+    .filter((item) => item.type === 'infusion')
+    .map((item) => item.service_template_id || ''))]
+  if (infusionTemplateIds.some((id) => !ObjectId.isValid(id))) throw new DomainError('กรุณาเลือก Template สำหรับบริการ Infusion')
+  const templates = infusionTemplateIds.length
+    ? await db.collection('infusion_templates').find({ _id: { $in: infusionTemplateIds.map((id) => new ObjectId(id)) }, is_active: true }).toArray()
+    : []
+  if (templates.length !== infusionTemplateIds.length) throw new DomainError('Template Infusion ไม่พร้อมใช้งาน', 'INVALID_TEMPLATE', 409)
+  const templateById = new Map(templates.map((template) => [template._id.toString(), template]))
+
   const items = (orderData.items || []).map((item) => ({
     id: new ObjectId().toHexString(),
     type: item.type,
@@ -775,6 +825,16 @@ export async function createOrders(encounterId: string, orderData: { items: Orde
     frequency: item.frequency || '',
     route: item.route || '',
     instructions: item.instructions || '',
+    ...(item.type === 'infusion' ? {
+      target_station: 'INFUSION',
+      service_template_id: item.service_template_id || '',
+      planned_for: item.planned_for || '',
+      duration_override_min: item.duration_override_min || undefined,
+      readiness_metadata: {
+        requirements: templateById.get(item.service_template_id || '')?.readiness_requirements || ['active_order'],
+        source: 'service_template',
+      },
+    } : {}),
     status: 'ordered' as const,
   }))
 
@@ -783,9 +843,14 @@ export async function createOrders(encounterId: string, orderData: { items: Orde
     encounter_id: encId,
     patient_id: encounter.patient_id,
     doctor_id: staffId,
-    order_type: 'mixed',
+    order_type: items.length > 0 && items.every((item) => item.type === items[0].type) && ['lab', 'imaging', 'medication', 'infusion'].includes(items[0].type)
+      ? items[0].type
+      : 'mixed',
     items,
     status: 'pending',
+    version: 1,
+    ...(items.some((item) => item.type === 'lab') ? { lab_status: 'ordered' } : {}),
+    ...(items.some((item) => item.type === 'medication') ? { pharmacy_status: 'waiting' } : {}),
     notes: String(orderData.notes || '').trim(),
     created_at: new Date(),
     updated_at: new Date(),
@@ -799,236 +864,130 @@ export async function createOrders(encounterId: string, orderData: { items: Orde
 // Laboratory & Pharmacy Workflows
 // -------------------------------------------------------------
 
+function versionFilter(version: number) {
+  return { version }
+}
+
+async function auditClinicalOrder(order: Document, action: string, staffId: string, reason = '') {
+  await (await getDb()).collection('clinical_order_events').insertOne({
+    order_id: order._id,
+    encounter_id: order.encounter_id,
+    action,
+    actor_id: objectId(staffId),
+    reason: reason.trim(),
+    version: Number(order.version || 1),
+    created_at: new Date(),
+  })
+}
+
+async function synchronizeOrderStatus(order: Document) {
+  const complete = Array.isArray(order.items) && order.items.every((item: Document) => ['completed', 'dispensed', 'cancelled'].includes(String(item.status)))
+  const status = complete ? 'completed' : 'in_progress'
+  if (order.status !== status) await (await getDb()).collection('orders').updateOne({ _id: order._id, version: order.version }, { $set: { status } })
+  order.status = status
+  return order
+}
+
 export async function getLabQueue() {
   const db = await getDb()
   return db.collection('orders').aggregate([
-    { $match: { 'items.type': 'lab', status: { $ne: 'completed' } } },
+    { $match: { 'items.type': 'lab', lab_status: { $ne: 'verified' } } },
     { $lookup: { from: 'patients', localField: 'patient_id', foreignField: '_id', as: 'patient_rows' } },
     { $set: { patient: { $arrayElemAt: ['$patient_rows', 0] } } },
     { $unset: 'patient_rows' },
   ]).toArray()
 }
 
-export async function collectLabSample(orderId: string, staffId: string) {
+export async function collectLabSample(orderId: string, staffId: string, version: number) {
   const db = await getDb()
   const doc = await db.collection('orders').findOneAndUpdate(
-    { _id: objectId(orderId) },
-    { $set: { 'items.$[elem].status': 'sample_collected', status: 'in_progress', specimen_collected_at: new Date(), specimen_collected_by: staffId } },
+    { _id: objectId(orderId), lab_status: { $in: ['ordered', null] }, ...versionFilter(version) },
+    { $set: { 'items.$[elem].status': 'sample_collected', status: 'in_progress', lab_status: 'sample_collected', specimen_collected_at: new Date(), specimen_collected_by: objectId(staffId) }, $inc: { version: 1 } },
     { arrayFilters: [{ 'elem.type': 'lab' }], returnDocument: 'after' }
   )
-  broadcast('lab', 'sample_collected', { orderId })
+  if (!doc) throw new DomainError('สถานะใบสั่งตรวจเปลี่ยนแปลงแล้ว กรุณารีเฟรช', 'VERSION_CONFLICT', 409)
+  await auditClinicalOrder(doc, 'sample_collected', staffId)
+  broadcast('lab', 'sample_collected', { orderId, version: doc.version })
   return doc
 }
 
-export async function saveLabResults(orderId: string, results: Record<string, unknown>, staffId: string) {
+export async function saveLabResults(orderId: string, results: Record<string, unknown>, staffId: string, version: number) {
   const db = await getDb()
   const doc = await db.collection('orders').findOneAndUpdate(
-    { _id: objectId(orderId) },
-    { $set: { 'items.$[elem].status': 'analyzed', 'items.$[elem].results': results, analyzed_at: new Date(), analyzed_by: staffId } },
+    { _id: objectId(orderId), lab_status: 'sample_collected', ...versionFilter(version) },
+    { $set: { 'items.$[elem].status': 'analyzed', 'items.$[elem].results': results, lab_status: 'results_recorded', analyzed_at: new Date(), analyzed_by: objectId(staffId) }, $inc: { version: 1 } },
     { arrayFilters: [{ 'elem.type': 'lab' }], returnDocument: 'after' }
   )
-  broadcast('lab', 'results_saved', { orderId, results })
+  if (!doc) throw new DomainError('ต้องเก็บตัวอย่างก่อนบันทึกผล หรือข้อมูลถูกแก้ไขแล้ว', 'VERSION_CONFLICT', 409)
+  await auditClinicalOrder(doc, 'results_recorded', staffId)
+  broadcast('lab', 'results_saved', { orderId, version: doc.version })
   return doc
 }
 
-export async function verifyLabResults(orderId: string, staffId: string) {
+export async function verifyLabResults(orderId: string, staffId: string, version: number, reason = '') {
   const db = await getDb()
+  const current = await db.collection('orders').findOne({ _id: objectId(orderId), lab_status: 'results_recorded', ...versionFilter(version) })
+  if (!current) throw new DomainError('ผลตรวจยังไม่พร้อมยืนยัน หรือข้อมูลถูกแก้ไขแล้ว', 'VERSION_CONFLICT', 409)
+  if (current.analyzed_by?.toString() === staffId) throw new DomainError('ผู้ตรวจยืนยันต้องเป็นคนละคนกับผู้บันทึกผล', 'SEPARATION_OF_DUTIES', 409)
   const doc = await db.collection('orders').findOneAndUpdate(
-    { _id: objectId(orderId) },
-    { $set: { 'items.$[elem].status': 'completed', status: 'completed', verified_at: new Date(), verified_by: staffId } },
+    { _id: current._id, lab_status: 'results_recorded', ...versionFilter(version) },
+    { $set: { 'items.$[elem].status': 'completed', lab_status: 'verified', verified_at: new Date(), verified_by: objectId(staffId) }, $inc: { version: 1 } },
     { arrayFilters: [{ 'elem.type': 'lab' }], returnDocument: 'after' }
   )
-  broadcast('lab', 'results_verified', { orderId })
+  if (!doc) throw new DomainError('ข้อมูลถูกแก้ไขโดยเจ้าหน้าที่คนอื่น กรุณารีเฟรช', 'VERSION_CONFLICT', 409)
+  await synchronizeOrderStatus(doc)
+  await auditClinicalOrder(doc, 'results_verified', staffId, reason)
+  broadcast('lab', 'results_verified', { orderId, version: doc.version })
   return doc
 }
 
 export async function getPharmacyQueue() {
   const db = await getDb()
   return db.collection('orders').aggregate([
-    { $match: { 'items.type': 'medication', status: { $ne: 'dispensed' } } },
+    { $match: { 'items.type': 'medication', pharmacy_status: { $ne: 'dispensed' } } },
     { $lookup: { from: 'patients', localField: 'patient_id', foreignField: '_id', as: 'patient_rows' } },
     { $set: { patient: { $arrayElemAt: ['$patient_rows', 0] } } },
     { $unset: 'patient_rows' },
   ]).toArray()
 }
 
-export async function startPreparePharmacy(orderId: string, staffId: string) {
+export async function startPreparePharmacy(orderId: string, staffId: string, version: number) {
   const db = await getDb()
   const doc = await db.collection('orders').findOneAndUpdate(
-    { _id: objectId(orderId) },
-    { $set: { 'items.$[elem].status': 'prepared', pharmacy_status: 'prepared', prepared_by: staffId, prepared_at: new Date() } },
+    { _id: objectId(orderId), pharmacy_status: { $in: ['waiting', null] }, ...versionFilter(version) },
+    { $set: { 'items.$[elem].status': 'prepared', pharmacy_status: 'preparing', prepared_by: objectId(staffId), prepared_at: new Date() }, $inc: { version: 1 } },
     { arrayFilters: [{ 'elem.type': 'medication' }], returnDocument: 'after' }
   )
-  broadcast('pharmacy', 'rx_prepared', { orderId })
+  if (!doc) throw new DomainError('ใบสั่งยาไม่อยู่ในสถานะรอจัด หรือข้อมูลถูกแก้ไขแล้ว', 'VERSION_CONFLICT', 409)
+  await auditClinicalOrder(doc, 'preparation_started', staffId)
+  broadcast('pharmacy', 'rx_prepared', { orderId, version: doc.version })
   return doc
 }
 
-export async function readyPharmacy(orderId: string, staffId: string) {
+export async function readyPharmacy(orderId: string, staffId: string, version: number) {
   const db = await getDb()
   const doc = await db.collection('orders').findOneAndUpdate(
-    { _id: objectId(orderId) },
-    { $set: { pharmacy_status: 'ready', ready_at: new Date(), ready_by: staffId } },
-    { returnDocument: 'after' }
+    { _id: objectId(orderId), pharmacy_status: 'preparing', ...versionFilter(version) },
+    { $set: { 'items.$[elem].status': 'ready', pharmacy_status: 'ready', ready_at: new Date(), ready_by: objectId(staffId) }, $inc: { version: 1 } },
+    { arrayFilters: [{ 'elem.type': 'medication' }], returnDocument: 'after' },
   )
-  broadcast('pharmacy', 'rx_ready', { orderId })
+  if (!doc) throw new DomainError('ต้องเริ่มจัดยาก่อนแจ้งพร้อมจ่าย หรือข้อมูลถูกแก้ไขแล้ว', 'VERSION_CONFLICT', 409)
+  await auditClinicalOrder(doc, 'medication_ready', staffId)
+  broadcast('pharmacy', 'rx_ready', { orderId, version: doc.version })
   return doc
 }
 
-export async function dispensePharmacy(orderId: string, staffId: string) {
+export async function dispensePharmacy(orderId: string, staffId: string, version: number, reason = '') {
   const db = await getDb()
   const doc = await db.collection('orders').findOneAndUpdate(
-    { _id: objectId(orderId) },
-    { $set: { 'items.$[elem].status': 'dispensed', pharmacy_status: 'dispensed', dispensed_by: staffId, dispensed_at: new Date() } },
+    { _id: objectId(orderId), pharmacy_status: 'ready', ...versionFilter(version) },
+    { $set: { 'items.$[elem].status': 'dispensed', pharmacy_status: 'dispensed', dispensed_by: objectId(staffId), dispensed_at: new Date() }, $inc: { version: 1 } },
     { arrayFilters: [{ 'elem.type': 'medication' }], returnDocument: 'after' }
   )
-  broadcast('pharmacy', 'rx_dispensed', { orderId })
-  return doc
-}
-
-// -------------------------------------------------------------
-// Chemotherapy & Radiation Workflows
-// -------------------------------------------------------------
-
-export async function getChemoChairs() {
-  const db = await getDb()
-  const sessions = await db.collection('chemo_sessions').aggregate([
-    { $match: { status: { $in: ['assigned', 'premed', 'infusing', 'paused'] } } },
-    { $lookup: { from: 'patients', localField: 'patient_id', foreignField: '_id', as: 'patient_rows' } },
-    { $set: { patient: { $arrayElemAt: ['$patient_rows', 0] } } },
-    { $unset: 'patient_rows' },
-  ]).toArray()
-  return sessions
-}
-
-export async function assignChemoChair(encounterId: string, chairNo: number, protocolName: string, durationMin: number) {
-  const db = await getDb()
-  const enc = await db.collection('encounters').findOne({ _id: objectId(encounterId) })
-  if (!enc) throw new DomainError('ไม่พบ visit', 'NOT_FOUND', 404)
-  const session = {
-    _id: new ObjectId(),
-    encounter_id: enc._id,
-    patient_id: enc.patient_id,
-    chair_no: chairNo,
-    protocol_name: protocolName,
-    cycle_no: 1,
-    premed_completed: false,
-    progress_percent: 0,
-    total_duration_min: durationMin || 60,
-    remaining_min: durationMin || 60,
-    nurse_call: false,
-    status: 'assigned',
-    created_at: new Date(),
-  }
-  await db.collection('chemo_sessions').insertOne(session)
-  broadcast('chemo', 'chair_assigned', session)
-  return session
-}
-
-export async function startChemoPremed(sessionId: string) {
-  const db = await getDb()
-  const doc = await db.collection('chemo_sessions').findOneAndUpdate(
-    { _id: objectId(sessionId) },
-    { $set: { premed_completed: true, status: 'premed', premed_at: new Date() } },
-    { returnDocument: 'after' }
-  )
-  broadcast('chemo', 'premed_started', { sessionId })
-  return doc
-}
-
-export async function startChemo(sessionId: string) {
-  const db = await getDb()
-  const doc = await db.collection('chemo_sessions').findOneAndUpdate(
-    { _id: objectId(sessionId) },
-    { $set: { status: 'infusing', started_at: new Date() } },
-    { returnDocument: 'after' }
-  )
-  broadcast('chemo', 'chemo_started', { sessionId })
-  return doc
-}
-
-export async function updateChemoProgress(sessionId: string, progressPercent: number) {
-  const db = await getDb()
-  const doc = await db.collection('chemo_sessions').findOneAndUpdate(
-    { _id: objectId(sessionId) },
-    { $set: { progress_percent: Math.min(100, Math.max(0, progressPercent)), updated_at: new Date() } },
-    { returnDocument: 'after' }
-  )
-  broadcast('chemo', 'progress_updated', { sessionId, progressPercent })
-  return doc
-}
-
-export async function callChemoNurse(sessionId: string, note = '') {
-  const db = await getDb()
-  const doc = await db.collection('chemo_sessions').findOneAndUpdate(
-    { _id: objectId(sessionId) },
-    { $set: { nurse_call: true, nurse_call_note: note, nurse_call_at: new Date() } },
-    { returnDocument: 'after' }
-  )
-  broadcast('chemo', 'nurse_called', { sessionId, note })
-  return doc
-}
-
-export async function completeChemo(sessionId: string) {
-  const db = await getDb()
-  const doc = await db.collection('chemo_sessions').findOneAndUpdate(
-    { _id: objectId(sessionId) },
-    { $set: { status: 'completed', progress_percent: 100, remaining_min: 0, completed_at: new Date() } },
-    { returnDocument: 'after' }
-  )
-  broadcast('chemo', 'chemo_completed', { sessionId })
-  return doc
-}
-
-export async function getRadiationSchedule() {
-  const db = await getDb()
-  return db.collection('radiation_sessions').aggregate([
-    { $lookup: { from: 'patients', localField: 'patient_id', foreignField: '_id', as: 'patient_rows' } },
-    { $set: { patient: { $arrayElemAt: ['$patient_rows', 0] } } },
-    { $unset: 'patient_rows' },
-  ]).toArray()
-}
-
-export async function arriveRadiation(sessionId: string) {
-  const db = await getDb()
-  const doc = await db.collection('radiation_sessions').findOneAndUpdate(
-    { _id: objectId(sessionId) },
-    { $set: { status: 'arrived', arrived_at: new Date() } },
-    { returnDocument: 'after' }
-  )
-  broadcast('radiation', 'session_arrived', { sessionId })
-  return doc
-}
-
-export async function startRadiation(sessionId: string, therapistId?: string) {
-  const db = await getDb()
-  const doc = await db.collection('radiation_sessions').findOneAndUpdate(
-    { _id: objectId(sessionId) },
-    { $set: { status: 'in_progress', started_at: new Date(), therapist_id: therapistId } },
-    { returnDocument: 'after' }
-  )
-  broadcast('radiation', 'session_started', { sessionId })
-  return doc
-}
-
-export async function completeRadiation(sessionId: string) {
-  const db = await getDb()
-  const doc = await db.collection('radiation_sessions').findOneAndUpdate(
-    { _id: objectId(sessionId) },
-    { $set: { status: 'completed', completed_at: new Date() } },
-    { returnDocument: 'after' }
-  )
-  broadcast('radiation', 'session_completed', { sessionId })
-  return doc
-}
-
-export async function rescheduleRadiation(sessionId: string, newTime: string, reason?: string) {
-  const db = await getDb()
-  const doc = await db.collection('radiation_sessions').findOneAndUpdate(
-    { _id: objectId(sessionId) },
-    { $set: { status: 'rescheduled', scheduled_time: newTime, reschedule_reason: reason, updated_at: new Date() } },
-    { returnDocument: 'after' }
-  )
-  broadcast('radiation', 'session_rescheduled', { sessionId, newTime })
+  if (!doc) throw new DomainError('ยาต้องอยู่ในสถานะพร้อมจ่าย หรือข้อมูลถูกแก้ไขแล้ว', 'VERSION_CONFLICT', 409)
+  await synchronizeOrderStatus(doc)
+  await auditClinicalOrder(doc, 'medication_dispensed', staffId, reason)
+  broadcast('pharmacy', 'rx_dispensed', { orderId, version: doc.version })
   return doc
 }
 
@@ -1038,74 +997,237 @@ export async function rescheduleRadiation(sessionId: string, newTime: string, re
 
 export async function getOperationsSnapshot() {
   const db = await getDb()
-  const [activeVisits, completedToday, queueItems, recommendations] = await Promise.all([
-    db.collection('encounters').countDocuments({ status: 'active' }),
-    db.collection('encounters').countDocuments({ status: 'completed' }),
+  const now = new Date()
+  const { start: todayStart, end: todayEnd } = bangkokDayRange(now)
+  const historyFrom = new Date(now.getTime() - FLOW_HISTORY_WINDOW_DAYS * 24 * 60 * 60 * 1000)
+  const [encountersToday, queueItems, queueHistory, recommendations] = await Promise.all([
+    db.collection('encounters').find({ checked_in_at: { $gte: todayStart, $lt: todayEnd } }).toArray(),
     db.collection('queue_items').find({ status: { $in: ACTIVE_QUEUE } }).toArray(),
+    db.collection('queue_items').find({ completed_at: { $gte: historyFrom }, started_at: { $exists: true } }).toArray(),
     db.collection('recommendations').find({ status: 'pending' }).toArray(),
   ])
 
-  const queuesByStation = new Map<string, { waiting: number; inProgress: number }>()
+  const queuesByStation = new Map<string, { waiting: Document[]; active: Document[] }>()
   for (const q of queueItems) {
-    const prev = queuesByStation.get(q.station_code) || { waiting: 0, inProgress: 0 }
-    if (q.status === 'waiting') prev.waiting++
-    if (q.status === 'called' || q.status === 'in_progress') prev.inProgress++
+    const prev = queuesByStation.get(q.station_code) || { waiting: [], active: [] }
+    if (q.status === 'waiting') prev.waiting.push(q)
+    if (q.status === 'called' || q.status === 'in_progress') prev.active.push(q)
     queuesByStation.set(q.station_code, prev)
+  }
+
+  const samplesByStation = new Map<string, number[]>()
+  const waitsToday: number[] = []
+  for (const item of queueHistory) {
+    const duration = minutesBetween(item.started_at, item.completed_at)
+    if (duration > 0) {
+      const values = samplesByStation.get(String(item.station_code)) || []
+      values.push(duration)
+      samplesByStation.set(String(item.station_code), values)
+    }
+    if (item.started_at >= todayStart) {
+      const wait = minutesBetween(item.created_at, item.started_at)
+      if (wait >= 0) waitsToday.push(wait)
+    }
   }
 
   let bottleneckCount = 0
   const stationStatuses = STATIONS.map((s) => {
-    const q = queuesByStation.get(s.code) || { waiting: 0, inProgress: 0 }
-    let state: 'flowing' | 'building' | 'bottleneck' | 'idle' = 'idle'
-    if (q.waiting === 0 && q.inProgress === 0) state = 'idle'
-    else if (q.waiting > s.capacity) {
-      state = 'bottleneck'
-      bottleneckCount++
-    } else if (q.waiting > 0) {
-      state = 'building'
-    } else {
-      state = 'flowing'
-    }
+    const q = queuesByStation.get(s.code) || { waiting: [], active: [] }
+    const estimate = buildFlowEstimate(samplesByStation.get(s.code) || [], s.averageServiceMin)
+    const estWait = simulateNewArrivalWait({ now, capacity: s.capacity, serviceMin: estimate.p50_min, active: q.active as Array<{ status: string; started_at?: Date }>, waitingCount: q.waiting.length })
+    const estWaitP80 = simulateNewArrivalWait({ now, capacity: s.capacity, serviceMin: estimate.p80_min, active: q.active as Array<{ status: string; started_at?: Date }>, waitingCount: q.waiting.length })
+    const state = classifyFlowState({ waiting: q.waiting.length, inProgress: q.active.length, capacity: s.capacity, waitP80Min: estWaitP80 })
+    if (state === 'bottleneck') bottleneckCount++
+    const completedLastHour = queueHistory.filter((item) => item.station_code === s.code && item.completed_at >= new Date(now.getTime() - 60 * 60 * 1000)).length
 
     return {
       code: s.code,
       name: s.name,
       floor: s.floor,
       state,
-      waiting_count: q.waiting,
-      in_progress_count: q.inProgress,
+      waiting_count: q.waiting.length,
+      in_progress_count: q.active.length,
       capacity: s.capacity,
-      avg_service_min: s.averageServiceMin,
-      est_wait_min: q.waiting * s.averageServiceMin,
-      throughput_per_hour: Math.round(60 / s.averageServiceMin * (q.inProgress > 0 ? 1 : 0.5)),
+      avg_service_min: estimate.p50_min,
+      est_wait_min: estWait,
+      est_wait_p80_min: estWaitP80,
+      estimate,
+      queue_pressure: Number(((q.waiting.length + q.active.length) / Math.max(1, s.capacity)).toFixed(2)),
+      throughput_per_hour: completedLastHour,
+    }
+  })
+
+  const completedTodayRows = encountersToday.filter((encounter) => encounter.status === 'completed' && encounter.completed_at)
+  const visitDurations = completedTodayRows.map((encounter) => minutesBetween(encounter.checked_in_at, encounter.completed_at)).filter((value) => value > 0)
+  const hourlyFlow = Array.from({ length: 11 }, (_, index) => {
+    const hour = String(index + 8).padStart(2, '0')
+    return {
+      hour: `${hour}:00`,
+      arrivals: encountersToday.filter((encounter) => encounter.checked_in_at && bangkokHour(new Date(encounter.checked_in_at)) === hour).length,
+      discharges: completedTodayRows.filter((encounter) => bangkokHour(new Date(encounter.completed_at)) === hour).length,
     }
   })
 
   return {
+    server_now: now,
+    generated_at: now,
+    data_window: { days: FLOW_HISTORY_WINDOW_DAYS, from: historyFrom, to: now },
     kpis: {
-      total_patients_today: activeVisits + completedToday,
-      active_now: activeVisits,
-      completed_today: completedToday,
-      avg_total_visit_min: 45,
-      avg_wait_min: 14,
+      total_patients_today: encountersToday.length,
+      active_now: encountersToday.filter((encounter) => encounter.status === 'active').length,
+      completed_today: completedTodayRows.length,
+      avg_total_visit_min: visitDurations.length ? Math.round(visitDurations.reduce((sum, value) => sum + value, 0) / visitDurations.length) : 0,
+      avg_wait_min: waitsToday.length ? Math.round(waitsToday.reduce((sum, value) => sum + value, 0) / waitsToday.length) : 0,
       bottleneck_station_count: bottleneckCount,
     },
     stations: stationStatuses,
     recommendations,
-    hourly_flow: [
-      { hour: '08:00', arrivals: 12, discharges: 0 },
-      { hour: '09:00', arrivals: 25, discharges: 5 },
-      { hour: '10:00', arrivals: 34, discharges: 18 },
-      { hour: '11:00', arrivals: 28, discharges: 26 },
-      { hour: '12:00', arrivals: 15, discharges: 22 },
-      { hour: '13:00', arrivals: 22, discharges: 19 },
-      { hour: '14:00', arrivals: 18, discharges: 24 },
-    ],
+    hourly_flow: hourlyFlow,
   }
 }
 
 export async function getFlowBoard() {
   return getOperationsSnapshot()
+}
+
+function segmentFromRoute(encounter: Document, step: Document, index: number): FlowPlanSegment {
+  const encounterStart = new Date(encounter.checked_in_at || encounter.created_at).getTime()
+  const fallbackStart = new Date(encounterStart + index * 10 * 60_000)
+  const baselineStart = step.baseline_start_at ? new Date(step.baseline_start_at) : fallbackStart
+  const baselineEnd = step.baseline_end_at
+    ? new Date(step.baseline_end_at)
+    : new Date(baselineStart.getTime() + (stationMap.get(String(step.station_code))?.averageServiceMin || 10) * 60_000)
+  return {
+    id: step.id?.toString() || `${encounter._id}:${index}`,
+    encounter_id: encounter._id.toString(),
+    station_code: String(step.station_code),
+    baseline_start_at: baselineStart.toISOString(),
+    baseline_end_at: baselineEnd.toISOString(),
+    adapted_start_at: baselineStart.toISOString(),
+    adapted_end_at: baselineEnd.toISOString(),
+    shift_min: 0,
+    reason: 'แผนตั้งต้นเมื่อสร้างเส้นทาง',
+  }
+}
+
+export async function getFlowSchedule(): Promise<FlowScheduleSlot[]> {
+  const db = await getDb()
+  const now = new Date()
+  const [snapshot, encounters] = await Promise.all([
+    getOperationsSnapshot(),
+    db.collection('encounters').find({ status: 'active' }).sort({ checked_in_at: 1 }).toArray(),
+  ])
+  const stationByCode = new Map(snapshot.stations.map((station) => [station.code, station]))
+  const patientIds = encounters.map((row) => row.patient_id).filter(Boolean)
+  const patients = await db.collection('patients').find({ _id: { $in: patientIds } }).toArray()
+  const patientById = new Map(patients.map((row) => [row._id.toString(), row]))
+
+  return encounters.flatMap((encounter) => {
+    const route = Array.isArray(encounter.route) ? encounter.route : []
+    const currentIndex = Math.max(0, route.findIndex((step: Document) => step.status === 'in_progress'))
+    const baseline = route.map((step: Document, index: number) => segmentFromRoute(encounter, step, index))
+    const adapted = adaptFlowPlan({
+      baseline,
+      now,
+      currentIndex,
+      waitFor: (code) => stationByCode.get(code)?.est_wait_p80_min || 0,
+      durationFor: (code) => stationByCode.get(code)?.estimate.p80_min || stationMap.get(code)?.averageServiceMin || 10,
+    })
+    const patient = patientById.get(encounter.patient_id?.toString())
+    return adapted.map((segment, index): FlowScheduleSlot => ({
+      id: segment.id,
+      encounter_id: encounter._id.toString(),
+      patient: { hn: String(patient?.hn || ''), display_name: String(patient?.display_name || '') },
+      station_code: segment.station_code,
+      station_name: stationMap.get(segment.station_code)?.name || segment.station_code,
+      status: route[index]?.status === 'completed' ? 'completed'
+        : route[index]?.status === 'in_progress' ? 'in_progress' : 'planned',
+      baseline_start_at: segment.baseline_start_at,
+      baseline_end_at: segment.baseline_end_at,
+      adapted_start_at: segment.adapted_start_at,
+      adapted_end_at: segment.adapted_end_at,
+      shift_min: segment.shift_min,
+      reason: segment.reason,
+    }))
+  })
+}
+
+export async function getActivePatientFlow(): Promise<ActivePatientFlow[]> {
+  const db = await getDb()
+  const [snapshot, rows] = await Promise.all([
+    getOperationsSnapshot(),
+    db.collection('encounters').aggregate([
+      { $match: { status: 'active' } },
+      { $sort: { updated_at: -1 } },
+      { $lookup: { from: 'patients', localField: 'patient_id', foreignField: '_id', as: 'patient_rows' } },
+      { $lookup: { from: 'queue_items', let: { encounterId: '$_id', currentStation: '$current_station' }, pipeline: [
+        { $match: { $expr: { $and: [{ $eq: ['$encounter_id', '$$encounterId'] }, { $eq: ['$station_code', '$$currentStation'] }, { $in: ['$status', ACTIVE_QUEUE] }] } } },
+        { $sort: { created_at: -1 } }, { $limit: 1 },
+      ], as: 'queue_rows' } },
+      { $set: { patient: { $arrayElemAt: ['$patient_rows', 0] }, queue: { $arrayElemAt: ['$queue_rows', 0] } } },
+      { $unset: ['patient_rows', 'queue_rows'] },
+    ]).toArray(),
+  ])
+  const stationByCode = new Map(snapshot.stations.map((station) => [station.code, station]))
+  return rows.map((row): ActivePatientFlow => {
+    const station = stationByCode.get(String(row.current_station))
+    return {
+      id: row._id.toString(),
+      encounter_no: String(row.encounter_no || ''),
+      patient: { hn: String(row.patient?.hn || ''), display_name: String(row.patient?.display_name || '') },
+      priority: row.priority || 'normal',
+      current_station: String(row.current_station || ''),
+      station_name: station?.name || String(row.current_station || ''),
+      queue_no: String(row.queue?.queue_no || row.current_queue_no || ''),
+      queue_status: row.queue?.status || '',
+      waiting_since: row.queue?.created_at?.toISOString?.() || row.queue?.created_at,
+      est_wait_min: station?.est_wait_min || 0,
+      est_wait_p80_min: station?.est_wait_p80_min || 0,
+      route: row.route || [],
+      updated_at: new Date(row.updated_at || row.created_at).toISOString(),
+    }
+  })
+}
+
+export async function getOperationsInsights(from?: string, to?: string): Promise<OperationsInsights> {
+  const db = await getDb()
+  const now = new Date()
+  const defaultRange = bangkokDayRange(now)
+  const rangeStart = from ? new Date(from) : defaultRange.start
+  const rangeEnd = to ? new Date(to) : defaultRange.end
+  if (!Number.isFinite(rangeStart.getTime()) || !Number.isFinite(rangeEnd.getTime()) || rangeStart >= rangeEnd) {
+    throw new DomainError('ช่วงเวลาสำหรับรายงานไม่ถูกต้อง')
+  }
+  const [encounters, queueRows, snapshot] = await Promise.all([
+    db.collection('encounters').find({ checked_in_at: { $gte: rangeStart, $lt: rangeEnd } }).toArray(),
+    db.collection('queue_items').find({ created_at: { $gte: rangeStart, $lt: rangeEnd } }).toArray(),
+    getOperationsSnapshot(),
+  ])
+  const completed = encounters.filter((row) => row.status === 'completed' && row.completed_at)
+  const visitMinutes = completed.map((row) => minutesBetween(row.checked_in_at, row.completed_at)).filter((value) => value > 0)
+  const waitMinutes = queueRows.map((row) => minutesBetween(row.created_at, row.started_at)).filter((value) => value > 0)
+  const hours = new Set<string>()
+  encounters.forEach((row) => row.checked_in_at && hours.add(`${bangkokHour(new Date(row.checked_in_at))}:00`))
+  completed.forEach((row) => row.completed_at && hours.add(`${bangkokHour(new Date(row.completed_at))}:00`))
+  const hourlyFlow = [...hours].sort().map((hour) => ({
+    hour,
+    arrivals: encounters.filter((row) => `${bangkokHour(new Date(row.checked_in_at))}:00` === hour).length,
+    discharges: completed.filter((row) => `${bangkokHour(new Date(row.completed_at))}:00` === hour).length,
+  }))
+  return {
+    generated_at: now.toISOString(),
+    from: rangeStart.toISOString(),
+    to: rangeEnd.toISOString(),
+    totals: {
+      arrivals: encounters.length,
+      completed: completed.length,
+      completion_rate_percent: encounters.length ? Math.round(completed.length / encounters.length * 1000) / 10 : 0,
+      avg_visit_min: visitMinutes.length ? Math.round(visitMinutes.reduce((sum, value) => sum + value, 0) / visitMinutes.length) : 0,
+      avg_wait_min: waitMinutes.length ? Math.round(waitMinutes.reduce((sum, value) => sum + value, 0) / waitMinutes.length) : 0,
+    },
+    hourly_flow: hourlyFlow,
+    station_performance: snapshot.stations,
+  }
 }
 
 export async function reportBottleneck(stationCode: string, note = '') {
@@ -1120,6 +1242,7 @@ export async function reportBottleneck(stationCode: string, note = '') {
     reason: note || 'เจ้าหน้าที่ประจำจุดขอกำลังเสริมเนื่องจากมีผู้ป่วยสะสม',
     action_label: 'จัดส่งเจ้าหน้าที่เสริม',
     status: 'pending',
+    version: 1,
     created_at: new Date(),
   }
   await db.collection('recommendations').insertOne(rec)
@@ -1127,26 +1250,32 @@ export async function reportBottleneck(stationCode: string, note = '') {
   return rec
 }
 
-export async function acceptRecommendation(id: string) {
+async function decideRecommendation(id: string, decision: 'accepted' | 'rejected', actorId: string, reason: string, version: number) {
   const db = await getDb()
   const doc = await db.collection('recommendations').findOneAndUpdate(
-    { _id: objectId(id) },
-    { $set: { status: 'accepted', resolved_at: new Date() } },
+    { _id: objectId(id), status: 'pending', version },
+    { $set: { status: decision, decision_reason: reason.trim(), decided_by: objectId(actorId), resolved_at: new Date() }, $inc: { version: 1 } },
     { returnDocument: 'after' }
   )
-  broadcast('operations', 'recommendation_accepted', { id })
+  if (!doc) throw new DomainError('คำแนะนำถูกตัดสินใจหรือแก้ไขแล้ว กรุณารีเฟรช', 'VERSION_CONFLICT', 409)
+  await db.collection('recommendation_decisions').insertOne({
+    recommendation_id: doc._id,
+    decision,
+    actor_id: objectId(actorId),
+    reason: reason.trim(),
+    version: doc.version,
+    decided_at: new Date(),
+  })
+  broadcast('operations', `recommendation_${decision}`, { id, actor_id: actorId, version: doc.version })
   return doc
 }
 
-export async function rejectRecommendation(id: string) {
-  const db = await getDb()
-  const doc = await db.collection('recommendations').findOneAndUpdate(
-    { _id: objectId(id) },
-    { $set: { status: 'rejected', resolved_at: new Date() } },
-    { returnDocument: 'after' }
-  )
-  broadcast('operations', 'recommendation_rejected', { id })
-  return doc
+export async function acceptRecommendation(id: string, actorId: string, reason: string, version: number) {
+  return decideRecommendation(id, 'accepted', actorId, reason, version)
+}
+
+export async function rejectRecommendation(id: string, actorId: string, reason: string, version: number) {
+  return decideRecommendation(id, 'rejected', actorId, reason, version)
 }
 
 // -------------------------------------------------------------
@@ -1162,18 +1291,75 @@ export async function getTvBoard(stationCode?: string) {
     { $limit: 12 },
   ]).toArray()
 
-  const serving = items.filter((i) => ['called', 'in_progress'].includes(i.status))
-  const waiting = items.filter((i) => i.status === 'waiting')
+  const serving = items.filter((item) => ['called', 'in_progress'].includes(item.status)).map(toPublicTvQueueItem)
+  const waiting = items.filter((item) => item.status === 'waiting').map(toPublicTvQueueItem)
   return { serving, waiting, updated_at: new Date() }
+}
+
+export async function getKioskJourney(identifier: string, birthDate: string) {
+  const db = await getDb()
+  const clean = identifier.trim().toUpperCase()
+  const birth = new Date(`${birthDate}T00:00:00+07:00`)
+  if (!clean || Number.isNaN(birth.getTime())) throw new DomainError('กรุณากรอกข้อมูลยืนยันให้ครบ')
+  const nextDay = new Date(birth.getTime() + 24 * 60 * 60 * 1000)
+  const patient = await db.collection('patients').findOne({
+    $and: [
+      { $or: [{ hn: clean }, { phone: identifier.trim() }] },
+      { birth_date: { $gte: birth, $lt: nextDay } },
+    ],
+  })
+  if (!patient) throw new DomainError('ไม่พบข้อมูลที่ตรงกัน กรุณาตรวจสอบ HN/เบอร์โทรและวันเกิด', 'NOT_FOUND', 404)
+  const encounter = await db.collection('encounters').findOne({ patient_id: patient._id, status: 'active' }, { sort: { created_at: -1 } })
+  if (!encounter) return { patient: { display_name: patient.display_name, hn: patient.hn }, journey: null }
+  const queue = await db.collection('queue_items').findOne({ encounter_id: encounter._id, station_code: encounter.current_station, status: { $in: ACTIVE_QUEUE } }, { sort: { created_at: -1 } })
+  const ahead = queue ? await db.collection('queue_items').countDocuments({ station_code: encounter.current_station, status: { $in: ['waiting', 'called'] }, rank: { $lt: queue.rank } }) : 0
+  const station = stationMap.get(encounter.current_station)
+  const snapshot = await getOperationsSnapshot()
+  const flow = snapshot.stations.find((row) => row.code === encounter.current_station)
+  const active = await db.collection('queue_items').find({ station_code: encounter.current_station, status: { $in: ['called', 'in_progress'] } }).toArray()
+  const activeItems = active.map((row) => ({
+    status: String(row.status),
+    ...(row.started_at instanceof Date ? { started_at: row.started_at } : {}),
+  }))
+  const estimatedWait = simulateNewArrivalWait({ now: new Date(), capacity: flow?.capacity || station?.capacity || 1, serviceMin: flow?.estimate.p50_min || station?.averageServiceMin || 10, active: activeItems, waitingCount: ahead })
+  const currentIndex = (encounter.route || []).findIndex((step: Document) => step.status === 'in_progress')
+  const next = currentIndex >= 0 ? encounter.route?.[currentIndex + 1] : undefined
+  return {
+    patient: { display_name: patient.display_name, hn: patient.hn },
+    journey: {
+      queue_no: queue?.queue_no || encounter.current_queue_no,
+      current_station: encounter.current_station,
+      station_name: station?.name || encounter.current_station,
+      station_floor: station?.floor || '',
+      queue_ahead: ahead,
+      est_wait_min: estimatedWait,
+      est_wait_band: Math.max(0, (flow?.est_wait_p80_min || estimatedWait) - estimatedWait),
+      wait_source: flow?.estimate.source || 'configured_fallback',
+      flow_status: flow?.state,
+      next_station: next?.station_code || '',
+      next_station_name: next ? stationMap.get(next.station_code)?.name || next.station_code : '',
+    },
+  }
 }
 
 export async function getMapOverview() {
   const snapshot = await getOperationsSnapshot()
+  const since = new Date(Date.now() - 30 * 60_000)
+  const transitions = await (await getDb()).collection('queue_events').aggregate([
+    { $match: { action: 'move_to_station', created_at: { $gte: since }, from_station: { $ne: '' }, to_station: { $ne: '' } } },
+    { $group: { _id: { from: '$from_station', to: '$to_station' }, patient_count: { $sum: 1 } } },
+    { $sort: { patient_count: -1 } },
+  ]).toArray()
   const floors = ['ชั้น 1', 'ชั้น 2', 'ชั้น 3', 'อาคารผู้ป่วยใน']
-  return floors.map((floor) => ({
-    floor,
-    stations: snapshot.stations.filter((s) => s.floor === floor),
-  }))
+  return {
+    generated_at: new Date().toISOString(),
+    floors: floors.map((floor) => ({ floor, stations: snapshot.stations.filter((s) => s.floor === floor) })),
+    movements: transitions.map((row) => ({
+      from_station: String(row._id.from),
+      to_station: String(row._id.to),
+      patient_count: Number(row.patient_count),
+    })),
+  }
 }
 
 // -------------------------------------------------------------
@@ -1249,7 +1435,7 @@ export async function addTriageMessage(userId: string, sessionId: string, messag
     created_at: now.toISOString(),
   }
 
-  // Simulated smart triage response
+  // Deterministic demonstration rules; this is not diagnosis or clinical advice.
   let botReply = 'รับทราบข้อมูลครับ มีอาการอื่นร่วมด้วย เช่น ไข้ หรืออาการปวดหรือไม่ครับ?'
   if (message.includes('ไข้') || message.includes('ร้อน')) {
     botReply = 'วัดอุณหภูมิได้เท่าไรครับ? และเริ่มมีไข้มาตั้งแต่เมื่อไรครับ'
@@ -1333,19 +1519,7 @@ export async function resolveHelpRequest(id: string, staffNotes = '') {
 // Patient Journey & Notifications
 // -------------------------------------------------------------
 
-export function stationAllowed(role: Role, stationCode: string) {
-  const isPc = PC_CODES.has(stationCode)
-  if (role === 'admin' || role === 'manager') return true
-  if (role === 'doctor' || role === 'physician') return isPc
-  if (role === 'nurse') return !isPc
-  if (role === 'registration') return ['NPR', 'EV'].includes(stationCode)
-  if (role === 'vitals_staff') return stationCode === 'VM'
-  if (role === 'lab_staff') return ['LAB', 'LABC'].includes(stationCode)
-  if (role === 'pharmacy_staff') return stationCode === 'PD'
-  if (role === 'chemo_staff') return ['CHEMO', 'CHEMO_PRE', 'CHEMO_INF'].includes(stationCode)
-  if (role === 'rt_staff') return ['RT_SIM', 'RT_L1', 'RT_L2', 'BRA'].includes(stationCode)
-  return false
-}
+export { stationAllowed }
 
 export async function patientJourney(userId: string) {
   const db = await getDb()
@@ -1373,8 +1547,15 @@ export async function patientJourney(userId: string) {
 
   const serving = await db.collection('queue_items').findOne({ station_code: encounter.current_station, status: { $in: ['called', 'in_progress'] } }, { sort: { called_at: -1 } })
   const station = byCode.get(encounter.current_station)
-  const average = Number(station?.average_service_min || 10)
-  const wait = queueAhead * average
+  const snapshot = await getOperationsSnapshot()
+  const flow = snapshot.stations.find((row) => row.code === encounter.current_station)
+  const activeAtStation = await db.collection('queue_items').find({ station_code: encounter.current_station, status: { $in: ['called', 'in_progress'] } }).toArray()
+  const activeItems = activeAtStation.map((row) => ({
+    status: String(row.status),
+    ...(row.started_at instanceof Date ? { started_at: row.started_at } : {}),
+  }))
+  const wait = simulateNewArrivalWait({ now: new Date(), capacity: flow?.capacity || 1, serviceMin: flow?.estimate.p50_min || 10, active: activeItems, waitingCount: queueAhead })
+  const waitP80 = simulateNewArrivalWait({ now: new Date(), capacity: flow?.capacity || 1, serviceMin: flow?.estimate.p80_min || 13, active: activeItems, waitingCount: queueAhead })
 
   return {
     encounter,
@@ -1392,8 +1573,9 @@ export async function patientJourney(userId: string) {
     route,
     queue_no: encounter.current_queue_no,
     est_wait_min: wait,
-    est_wait_band: average,
-    wait_source: 'queue_position',
+    est_wait_band: Math.max(0, waitP80 - wait),
+    wait_source: flow?.estimate.source || 'configured_fallback',
+    flow_status: flow?.state,
     queue_status: myItem?.status || '',
     now_serving_queue_no: serving?.queue_no || '',
     updated_at: new Date(),
@@ -1437,19 +1619,37 @@ export function validateDoctorRoute(codes: string[]) {
 }
 
 export async function setDoctorRoute(encounterId: string, codes: string[]) {
-  validateDoctorRoute(codes)
   const db = await getDb()
   const id = objectId(encounterId)
   const encounter = await db.collection('encounters').findOne({ _id: id, status: 'active' })
   if (!encounter) throw new DomainError('ไม่พบ visit ที่กำลังดำเนินการ', 'NOT_FOUND', 404)
   if (!PC_CODES.has(encounter.current_station)) throw new DomainError('กำหนด Route ได้เฉพาะตอนผู้ป่วยอยู่ห้องตรวจแพทย์', 'INVALID_STATE', 409)
 
+  const hasInfusionOrder = await db.collection('orders').countDocuments({
+    encounter_id: id,
+    items: { $elemMatch: { type: 'infusion', status: { $nin: ['cancelled', 'completed'] } } },
+    status: { $ne: 'cancelled' },
+  }) > 0
+  const normalizedCodes = [...codes]
+  if (hasInfusionOrder && !normalizedCodes.includes('INFUSION')) {
+    const pharmacyIndex = normalizedCodes.indexOf('PD')
+    const insertionIndex = pharmacyIndex >= 0
+      ? pharmacyIndex
+      : normalizedCodes.at(-1) === 'IPW'
+        ? Math.max(0, normalizedCodes.length - 2)
+        : Math.max(0, normalizedCodes.length - 1)
+    normalizedCodes.splice(insertionIndex, 0, 'INFUSION')
+  }
+  validateDoctorRoute(normalizedCodes)
+
   const prefix: Document[] = []
   for (const step of encounter.route || []) {
     prefix.push(step)
     if (step.station_code === encounter.current_station) break
   }
-  const route = [...prefix, ...routeSteps(codes)]
+  const lastBaselineEnd = prefix.at(-1)?.baseline_end_at ? new Date(prefix.at(-1)?.baseline_end_at).getTime() : 0
+  const routeStart = new Date(Math.max(Date.now(), Number.isFinite(lastBaselineEnd) ? lastBaselineEnd : 0))
+  const route = [...prefix, ...routeSteps(normalizedCodes, routeStart)]
   await db.collection('encounters').updateOne({ _id: id, current_station: encounter.current_station }, { $set: { route, updated_at: new Date() } })
   broadcast('encounters', 'route_updated', { encounter_id: id.toHexString(), route })
   return { ...encounter, route }
@@ -1467,8 +1667,8 @@ export async function resetPrototypeData() {
     'vitals',
     'clinical_assessments',
     'clinical_notes',
-    'chemo_sessions',
-    'radiation_sessions',
+    'infusion_sessions',
+    'infusion_events',
     'triage_sessions',
     'previsits',
     'help_requests',

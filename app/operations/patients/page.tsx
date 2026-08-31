@@ -1,144 +1,61 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
-import { Search, User, FileText, Phone, MapPin, Activity, ShieldCheck, X } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { Activity, Search, Users } from 'lucide-react'
 import { StaffShell } from '@/components/staff-shell'
+import { Drawer, Tabs } from '@/components/ui'
 import { clientApi } from '@/lib/client'
-import type { Patient } from '@/lib/types'
+import { stationMap } from '@/lib/stations'
+import type { ActivePatientFlow, Patient } from '@/lib/types'
 
 export default function PatientsPage() {
+  const [tab, setTab] = useState<'active' | 'directory'>('active')
   const [query, setQuery] = useState('')
   const [patients, setPatients] = useState<Patient[]>([])
+  const [active, setActive] = useState<ActivePatientFlow[]>([])
+  const [selectedActive, setSelectedActive] = useState<ActivePatientFlow | null>(null)
+  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null)
   const [loading, setLoading] = useState(true)
-  const [selected, setSelected] = useState<Patient | null>(null)
+
+  const loadActive = useCallback(async () => {
+    try { setActive(await clientApi.getActivePatientFlow()) } finally { setLoading(false) }
+  }, [])
 
   useEffect(() => {
-    clientApi.searchPatients(query).then((res) => {
-      setPatients(res)
-      setLoading(false)
-    }).catch(() => setLoading(false))
-  }, [query])
+    if (tab === 'active') {
+      void loadActive()
+      const timer = window.setInterval(() => void loadActive(), 15_000)
+      return () => window.clearInterval(timer)
+    }
+    const timer = window.setTimeout(() => {
+      clientApi.searchPatients(query).then(setPatients).finally(() => setLoading(false))
+    }, 250)
+    return () => window.clearTimeout(timer)
+  }, [loadActive, query, tab])
 
-  return (
-    <StaffShell role="manager">
-      <div style={{ display: 'grid', gap: 20 }}>
-        <div className="section-heading">
-          <div>
-            <span className="eyebrow">PATIENTS DIRECTORY</span>
-            <h2>ทะเบียนประวัติผู้ป่วย</h2>
-            <p>ค้นหาและตรวจสอบเวชระเบียน สิทธิการรักษา และประวัติการรับบริการ</p>
-          </div>
-        </div>
+  return <StaffShell role="manager">
+    <div style={{ display: 'grid', gap: 20 }}>
+      <div className="section-heading"><div><span className="eyebrow">ผู้ป่วยและเส้นทางบริการ</span><h2>ผู้ป่วยที่อยู่ในระบบวันนี้และทะเบียนค้นหา</h2><p>ดูสถานีปัจจุบัน เวลารอ P50/P80 ความเร่งด่วน และเส้นทางที่เหลือ</p></div></div>
+      <Tabs value={tab} onChange={setTab} items={[
+        { id: 'active', label: `อยู่ในระบบ (${active.length})`, icon: <Activity size={16} aria-hidden="true" /> },
+        { id: 'directory', label: 'ทะเบียนผู้ป่วย', icon: <Users size={16} aria-hidden="true" /> },
+      ]} />
 
-        <div className="workspace-card">
-          <div className="workspace-card-head" style={{ gap: 14 }}>
-            <div style={{ position: 'relative', width: 'min(420px, 100%)' }}>
-              <Search size={18} style={{ position: 'absolute', left: 12, top: 14, color: 'var(--muted)' }} />
-              <input
-                style={{ paddingLeft: 38 }}
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="ค้นหาด้วยชื่อ, นามสกุล, เบอร์โทร หรือ HN..."
-              />
-            </div>
-            <span className="count-badge">{patients.length} รายการ</span>
-          </div>
+      {tab === 'directory' && <div className="workspace-card-head workspace-card"><label style={{ width: 'min(460px, 100%)' }}><span>ค้นหาทะเบียน</span><div style={{ position: 'relative' }}><Search size={17} aria-hidden="true" style={{ position: 'absolute', left: 12, top: 13 }} /><input value={query} onChange={(event) => setQuery(event.target.value)} style={{ paddingLeft: 38 }} placeholder="ชื่อ เบอร์โทร หรือ HN" /></div></label></div>}
 
-          <div style={{ padding: '0 20px 20px' }}>
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>HN</th>
-                  <th>ชื่อ-นามสกุล</th>
-                  <th>เพศ / อายุ</th>
-                  <th>เบอร์โทรศัพท์</th>
-                  <th>สิทธิการรักษา</th>
-                  <th>ประวัติแพ้ยา</th>
-                  <th>การจัดการ</th>
-                </tr>
-              </thead>
-              <tbody>
-                {patients.map((p) => (
-                  <tr key={p.id || p.hn}>
-                    <td><strong style={{ fontFamily: 'monospace' }}>{p.hn}</strong></td>
-                    <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <div className="avatar small">{p.display_name.slice(0, 1)}</div>
-                        <div>
-                          <strong>{p.display_name}</strong>
-                          <div style={{ fontSize: '.72rem', color: 'var(--muted)' }}>{p.province || 'กรุงเทพมหานคร'}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td>{p.gender || '-'} / {p.age || '-'} ปี</td>
-                    <td>{p.phone}</td>
-                    <td>
-                      <span className="status-pill flowing">{p.insurance_type || 'UC (บัตรทอง)'}</span>
-                    </td>
-                    <td>
-                      {p.allergies && p.allergies.length > 0 ? (
-                        <span className="status-pill bottleneck">{p.allergies.join(', ')}</span>
-                      ) : (
-                        <span style={{ color: 'var(--muted)', fontSize: '.78rem' }}>ไม่มีประวัติแพ้</span>
-                      )}
-                    </td>
-                    <td>
-                      <button className="button secondary" style={{ minHeight: 34, padding: '0 12px', fontSize: '.8rem' }} onClick={() => setSelected(p)}>
-                        ดูประวัติ
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+      <section className="workspace-card">
+        {loading ? <div className="empty-state">กำลังโหลดข้อมูล…</div> : tab === 'active' ? active.length === 0 ? <div className="empty-state">ขณะนี้ยังไม่มีผู้ป่วยอยู่ในระบบ</div> : <div className="table-scroll"><table className="data-table"><thead><tr><th>ผู้ป่วย</th><th>คิว / สถานีปัจจุบัน</th><th>ความเร่งด่วน</th><th>เวลารอ P50 / P80</th><th>เส้นทางที่เหลือ</th><th>รายละเอียด</th></tr></thead><tbody>{active.map((row) => {
+          const remaining = row.route.filter((step) => step.status !== 'completed')
+          return <tr key={row.id}><td><strong>{row.patient.display_name}</strong><small style={{ display: 'block' }}>HN {row.patient.hn}</small></td><td><strong>{row.queue_no}</strong><small style={{ display: 'block' }}>{row.current_station} · {row.station_name}</small></td><td><span className={`status-pill ${row.priority === 'urgent' ? 'bottleneck' : 'flowing'}`}>{row.priority === 'urgent' ? 'เร่งด่วน' : row.priority === 'fast_track' ? 'ช่องทางด่วน' : 'ปกติ'}</span></td><td>{row.est_wait_min} / {row.est_wait_p80_min} นาที</td><td>{remaining.map((step) => step.station_code).join(' → ') || 'ปลายทาง'}</td><td><button className="button secondary" onClick={() => setSelectedActive(row)}>เปิดรายละเอียด</button></td></tr>
+        })}</tbody></table></div> : patients.length === 0 ? <div className="empty-state">ไม่พบทะเบียนที่ตรงกับคำค้น</div> : <div className="table-scroll"><table className="data-table"><thead><tr><th>HN</th><th>ชื่อ-นามสกุล</th><th>โทรศัพท์</th><th>ข้อมูลสิทธิจำลอง</th><th>รายละเอียด</th></tr></thead><tbody>{patients.map((patient) => <tr key={patient.id}><td>{patient.hn}</td><td>{patient.display_name}</td><td>{patient.phone}</td><td>{patient.insurance_type || 'ไม่ระบุ'}</td><td><button className="button secondary" onClick={() => setSelectedPatient(patient)}>เปิดรายละเอียด</button></td></tr>)}</tbody></table></div>}
+      </section>
 
-        {/* Patient Detail Drawer */}
-        {selected && (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'grid', placeItems: 'center', zIndex: 100, backdropFilter: 'blur(4px)' }}>
-            <div className="workspace-card" style={{ width: 'min(600px, 92%)', padding: 24 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <div className="avatar">{selected.display_name.slice(0, 1)}</div>
-                  <div>
-                    <h3 style={{ margin: 0 }}>{selected.display_name}</h3>
-                    <p style={{ margin: 0, fontSize: '.8rem', color: 'var(--muted)' }}>HN: {selected.hn} · โทร {selected.phone}</p>
-                  </div>
-                </div>
-                <button className="icon-button" onClick={() => setSelected(null)}><X size={18} /></button>
-              </div>
-
-              <div style={{ display: 'grid', gap: 12, fontSize: '.85rem' }}>
-                <div style={{ padding: 12, background: '#f8faf9', borderRadius: 12, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                  <div><span>วันเกิด:</span> <strong>{selected.birth_date ? new Date(selected.birth_date).toLocaleDateString('th-TH') : '-'}</strong></div>
-                  <div><span>อายุ:</span> <strong>{selected.age || '-'} ปี</strong></div>
-                  <div><span>สิทธิการรักษา:</span> <strong>{selected.insurance_type || '-'}</strong></div>
-                  <div><span>สถานะสิทธิ:</span> <strong style={{ color: 'var(--ok)' }}>{selected.eligibility_status || 'พร้อมใช้งาน'}</strong></div>
-                </div>
-
-                <div>
-                  <strong>ประวัติแพ้ยา / อาหาร:</strong>
-                  <p style={{ margin: '4px 0 0', color: selected.allergies?.length ? 'var(--danger)' : 'var(--muted)' }}>
-                    {selected.allergies?.length ? selected.allergies.join(', ') : 'ไม่มีประวัติแพ้ยาหรืออาหาร'}
-                  </p>
-                </div>
-
-                <div>
-                  <strong>โรคประจำตัวเรื้อรัง:</strong>
-                  <p style={{ margin: '4px 0 0', color: 'var(--ink)' }}>
-                    {selected.chronic_conditions?.length ? selected.chronic_conditions.join(', ') : 'ไม่มีโรคประจำตัว'}
-                  </p>
-                </div>
-              </div>
-
-              <div style={{ marginTop: 20, display: 'flex', justifyContent: 'flex-end' }}>
-                <button className="button primary" onClick={() => setSelected(null)}>ปิดหน้าต่าง</button>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    </StaffShell>
-  )
+      <Drawer open={Boolean(selectedActive)} title={selectedActive?.patient.display_name || 'รายละเอียดผู้ป่วย'} eyebrow={selectedActive?.encounter_no} onClose={() => setSelectedActive(null)}>
+        {selectedActive && <div style={{ display: 'grid', gap: 14 }}><div className="inline-alert"><strong>{selectedActive.queue_no} · {selectedActive.current_station}</strong><br />เวลารอ P50 {selectedActive.est_wait_min} นาที · P80 {selectedActive.est_wait_p80_min} นาที</div><ol>{selectedActive.route.map((step) => <li key={step.id || step.station_code}><strong>{step.station_code} · {stationMap.get(step.station_code)?.name}</strong> — {step.status === 'completed' ? 'เสร็จแล้ว' : step.status === 'in_progress' ? 'กำลังดำเนินการ' : 'รอตามแผน'}</li>)}</ol></div>}
+      </Drawer>
+      <Drawer open={Boolean(selectedPatient)} title={selectedPatient?.display_name || 'รายละเอียดทะเบียน'} eyebrow={selectedPatient ? `HN ${selectedPatient.hn}` : ''} onClose={() => setSelectedPatient(null)}>
+        {selectedPatient && <dl><dt>โทรศัพท์</dt><dd>{selectedPatient.phone}</dd><dt>ข้อมูลสิทธิจำลอง/บันทึกโดยเจ้าหน้าที่</dt><dd>{selectedPatient.insurance_type || 'ไม่ระบุ'}</dd><dt>ประวัติแพ้</dt><dd>{selectedPatient.allergies?.join(', ') || 'ไม่มีข้อมูล'}</dd><dt>โรคประจำตัว</dt><dd>{selectedPatient.chronic_conditions?.join(', ') || 'ไม่มีข้อมูล'}</dd></dl>}
+      </Drawer>
+    </div>
+  </StaffShell>
 }

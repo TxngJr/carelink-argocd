@@ -1,9 +1,10 @@
 'use client'
 
 import React, { useEffect, useState } from 'react'
-import { Check, CheckCircle2, PackageCheck, Pill, RefreshCw, ShieldCheck } from 'lucide-react'
+import { RefreshCw } from 'lucide-react'
 import { StaffShell } from '@/components/staff-shell'
 import { QueueWorkspace } from '@/components/queue-workspace'
+import { Modal } from '@/components/ui'
 import { clientApi } from '@/lib/client'
 import type { ClinicalOrder } from '@/lib/types'
 
@@ -12,6 +13,8 @@ export default function PharmacyPage() {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
+  const [dispensing, setDispensing] = useState<ClinicalOrder | null>(null)
+  const [dispenseReason, setDispenseReason] = useState('ตรวจสอบผู้ป่วยและให้คำแนะนำการใช้ยาแล้ว')
 
   async function loadPharmacyQueue() {
     setLoading(true)
@@ -36,13 +39,14 @@ export default function PharmacyPage() {
     return () => { active = false }
   }, [])
 
-  async function handleAction(orderId: string, action: 'prepare' | 'ready' | 'dispense') {
+  async function handleAction(order: ClinicalOrder, action: 'prepare' | 'ready' | 'dispense') {
     setBusy(true)
     try {
-      if (action === 'prepare') await clientApi.startPreparePharmacy(orderId)
-      if (action === 'ready') await clientApi.readyPharmacy(orderId)
-      if (action === 'dispense') await clientApi.dispensePharmacy(orderId)
-      setMessage(`ทำรายการ ${action} ใบสั่งยาสำเร็จ`)
+      if (action === 'prepare') await clientApi.startPreparePharmacy(order.id, order.version || 1)
+      if (action === 'ready') await clientApi.readyPharmacy(order.id, order.version || 1)
+      if (action === 'dispense') await clientApi.dispensePharmacy(order.id, order.version || 1, dispenseReason)
+      setMessage(action === 'prepare' ? 'เริ่มจัดยาแล้ว' : action === 'ready' ? 'บันทึกยาพร้อมจ่ายแล้ว' : 'จ่ายยาและบันทึกการให้คำแนะนำแล้ว')
+      setDispensing(null)
       await loadPharmacyQueue()
     } finally {
       setBusy(false)
@@ -98,20 +102,14 @@ export default function PharmacyPage() {
                       </td>
                       <td>
                         <span className="status-pill flowing">
-                          {ord.status}
+                          {ord.pharmacy_status === 'preparing' ? 'กำลังจัดยา' : ord.pharmacy_status === 'ready' ? 'พร้อมจ่าย' : 'รอจัดยา'}
                         </span>
                       </td>
                       <td>
                         <div style={{ display: 'flex', gap: 6 }}>
-                          <button className="button secondary" style={{ minHeight: 32 }} onClick={() => void handleAction(ord.id, 'prepare')} disabled={busy}>
-                            จัดยา
-                          </button>
-                          <button className="button warning" style={{ minHeight: 32 }} onClick={() => void handleAction(ord.id, 'ready')} disabled={busy}>
-                            ยาพร้อมจ่าย
-                          </button>
-                          <button className="button success" style={{ minHeight: 32 }} onClick={() => void handleAction(ord.id, 'dispense')} disabled={busy}>
-                            จ่ายยาและให้คำแนะนำ
-                          </button>
+                          {(!ord.pharmacy_status || ord.pharmacy_status === 'waiting') && <button className="button secondary" onClick={() => void handleAction(ord, 'prepare')} disabled={busy}>เริ่มจัดยา</button>}
+                          {ord.pharmacy_status === 'preparing' && <button className="button warning" onClick={() => void handleAction(ord, 'ready')} disabled={busy}>ยาพร้อมจ่าย</button>}
+                          {ord.pharmacy_status === 'ready' && <button className="button success" onClick={() => setDispensing(ord)} disabled={busy}>จ่ายยาและให้คำแนะนำ</button>}
                         </div>
                       </td>
                     </tr>
@@ -122,7 +120,9 @@ export default function PharmacyPage() {
           </div>
         </div>
 
-        <QueueWorkspace role="nurse" />
+        <Modal open={Boolean(dispensing)} title="ยืนยันจ่ายยา" onClose={() => setDispensing(null)} actions={<><button className="button ghost" onClick={() => setDispensing(null)}>ยกเลิก</button><button className="button success" disabled={busy || dispenseReason.trim().length < 3} onClick={() => dispensing && void handleAction(dispensing, 'dispense')}>ยืนยันจ่ายยา</button></>}><label><span>เหตุผล/การตรวจสอบก่อนจ่าย</span><textarea rows={3} value={dispenseReason} onChange={(event) => setDispenseReason(event.target.value)} /></label></Modal>
+
+        <QueueWorkspace role="nurse" stationCodes={['PD']} />
       </div>
     </StaffShell>
   )

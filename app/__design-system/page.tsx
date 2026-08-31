@@ -2,7 +2,7 @@
 
 import React from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Check, Flame, HeartPulse, Palette, Sparkles } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 
 export default function DesignSystemPage() {
   const colors = [
@@ -48,16 +48,16 @@ export default function DesignSystemPage() {
         <h3 style={{ marginTop: 0 }}>สถานะการไหลเวียน (AMIS Flow States)</h3>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           <span className="status-pill flowing" style={{ padding: '8px 14px', fontSize: '.85rem' }}>
-            🟢 Flowing (คล่องตัว)
+            ไหลลื่น
           </span>
           <span className="status-pill building" style={{ padding: '8px 14px', fontSize: '.85rem' }}>
-            🟡 Building (เริ่มสะสม)
+            เริ่มหนาแน่น
           </span>
           <span className="status-pill bottleneck" style={{ padding: '8px 14px', fontSize: '.85rem' }}>
-            🔴 Bottleneck (คอขวดวิกฤต)
+            จุดติดขัด
           </span>
           <span className="status-pill" style={{ padding: '8px 14px', fontSize: '.85rem' }}>
-            ⚪ Idle (ไม่มีผู้ป่วยรอ)
+            ว่างตามแผน
           </span>
         </div>
       </section>

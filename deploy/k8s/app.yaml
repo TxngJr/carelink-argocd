@@ -16,7 +16,7 @@ kind: Deployment
 metadata:
   name: carelink
 spec:
-  replicas: 1
+  replicas: 2
   revisionHistoryLimit: 2
   selector:
     matchLabels:
@@ -27,7 +27,22 @@ spec:
       labels:
         app.kubernetes.io/name: carelink
         app.kubernetes.io/component: app
+      annotations:
+        # Increment when changing values in secret.yaml so existing pods pick
+        # up the new environment variables during the next Argo CD sync.
+        carelink.dev/secret-revision: public-demo-v1
     spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: { type: RuntimeDefault }
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: carelink
+              app.kubernetes.io/component: app
       containers:
         - name: carelink
           image: carelink-app
@@ -36,16 +51,22 @@ spec:
             - name: http
               containerPort: 3000
           envFrom:
-            - secretRef:
+            - configMapRef:
                 name: carelink-config
+            - secretRef:
+                name: carelink-secrets
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
           readinessProbe:
-            httpGet: { path: /health, port: http }
+            httpGet: { path: /health/ready, port: http }
             initialDelaySeconds: 5
             periodSeconds: 10
             timeoutSeconds: 3
             failureThreshold: 6
           livenessProbe:
-            httpGet: { path: /health, port: http }
+            httpGet: { path: /health/live, port: http }
             initialDelaySeconds: 20
             periodSeconds: 20
             timeoutSeconds: 3
@@ -53,3 +74,9 @@ spec:
           resources:
             requests: { cpu: 50m, memory: 128Mi }
             limits: { cpu: 500m, memory: 512Mi }
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

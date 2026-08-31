@@ -1,16 +1,11 @@
 'use client'
 
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import {
-  FileText,
+  Droplets,
   FlaskConical,
-  Pill,
   Plus,
-  Radio,
   Scan,
-  Send,
-  Stethoscope,
-  Syringe,
   Trash2,
   X,
 } from 'lucide-react'
@@ -18,10 +13,11 @@ import { StaffShell } from '@/components/staff-shell'
 import { QueueWorkspace } from '@/components/queue-workspace'
 import { buildDoctorRoute, OPTIONAL_ROUTE_CODES, stationMap } from '@/lib/stations'
 import { clientApi } from '@/lib/client'
-import type { OrderItem } from '@/lib/types'
+import type { Encounter, InfusionTemplate, OrderItem } from '@/lib/types'
 
 export default function PhysicianPage() {
   const [encounterId, setEncounterId] = useState('')
+  const [encounter, setEncounter] = useState<Encounter | null>(null)
   const [subjective, setSubjective] = useState('')
   const [objective, setObjective] = useState('')
   const [assessment, setAssessment] = useState('')
@@ -35,6 +31,10 @@ export default function PhysicianPage() {
   const [orderDose, setOrderDose] = useState('')
   const [orderFreq, setOrderFreq] = useState('1x1 หลังอาหาร')
   const [orderQty, setOrderQty] = useState(1)
+  const [infusionTemplates, setInfusionTemplates] = useState<InfusionTemplate[]>([])
+  const [infusionTemplateId, setInfusionTemplateId] = useState('')
+  const [infusionPlannedFor, setInfusionPlannedFor] = useState('')
+  const [infusionDuration, setInfusionDuration] = useState('')
 
   // Route Builder
   const routeOptions = useMemo(() => Array.from(OPTIONAL_ROUTE_CODES), [])
@@ -45,21 +45,42 @@ export default function PhysicianPage() {
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
 
+  useEffect(() => {
+    clientApi.getInfusionTemplates()
+      .then((templates) => {
+        setInfusionTemplates(templates)
+        setInfusionTemplateId((current) => current || templates[0]?.id || '')
+      })
+      .catch(() => setMessage('ไม่สามารถโหลดรายการบริการ Infusion ได้ กรุณาลองใหม่'))
+  }, [])
+
   function addOrder() {
-    if (!orderName.trim()) return
+    const template = infusionTemplates.find((item) => item.id === infusionTemplateId)
+    const resolvedName = orderType === 'infusion' ? template?.name : orderName.trim()
+    if (!resolvedName || (orderType === 'infusion' && !template)) return
     const newItem: OrderItem = {
       id: Date.now().toString(),
       type: orderType,
-      code: orderName.toUpperCase().slice(0, 8),
-      name: orderName.trim(),
+      code: orderType === 'infusion' ? template!.code : resolvedName.toUpperCase().slice(0, 8),
+      name: resolvedName,
       dosage: orderDose,
       frequency: orderFreq,
       quantity: Number(orderQty),
       status: 'ordered',
+      ...(orderType === 'infusion' ? {
+        target_station: 'INFUSION',
+        service_template_id: template!.id,
+        ...(infusionPlannedFor ? { planned_for: new Date(infusionPlannedFor).toISOString() } : {}),
+        ...(Number(infusionDuration) > 0 ? { duration_override_min: Number(infusionDuration) } : {}),
+      } : {}),
     }
     setOrders((prev) => [...prev, newItem])
+    if (orderType === 'infusion') {
+      setSelectedRoute((prev) => prev.includes('INFUSION') ? prev : [...prev.filter((code) => code !== 'PD'), 'INFUSION', ...(prev.includes('PD') ? ['PD'] : [])])
+    }
     setOrderName('')
     setOrderDose('')
+    setInfusionDuration('')
   }
 
   function removeOrder(id: string) {
@@ -79,7 +100,7 @@ export default function PhysicianPage() {
   async function handleSaveConsultation(e: React.FormEvent) {
     e.preventDefault()
     if (!encounterId) {
-      setMessage('กรุณาระบุ Encounter ID ของผู้ป่วย')
+      setMessage('กรุณาเลือกผู้ป่วยจากคิวห้องตรวจด้านล่าง')
       return
     }
     setBusy(true)
@@ -122,6 +143,12 @@ export default function PhysicianPage() {
     return map[code] || code
   }
 
+  async function selectEncounter(id: string) {
+    setEncounterId(id)
+    setEncounter(await clientApi.getEncounterDetail(id))
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
   return (
     <StaffShell role="doctor" displayName="นพ. วรเมธ สถิตย์ธรรม (อายุรกรรมมะเร็ง)">
       <div style={{ display: 'grid', gap: 20 }}>
@@ -129,7 +156,7 @@ export default function PhysicianPage() {
           <div>
             <span className="eyebrow">PHYSICIAN CONSULTATION WORKSPACE</span>
             <h2>ห้องตรวจแพทย์ (PC1–PC4)</h2>
-            <p>บันทึกประวัติการตรวจ (SOAP), รหัสโรค ICD-10, สั่งตรวจแล็บ/รังสี/สั่งยา และกำหนดเส้นทางบริการหลังตรวจ</p>
+            <p>บันทึก SOAP, วินิจฉัยโรค, สั่งตรวจ/สั่งยา/Infusion และกำหนดเส้นทางบริการหลังตรวจ</p>
           </div>
         </div>
 
@@ -140,10 +167,7 @@ export default function PhysicianPage() {
               <h3>บันทึกการตรวจและวินิจฉัย (Clinical Consultation Note)</h3>
             </div>
 
-            <label>
-              <span>Encounter ID ผู้ป่วย <em>*</em></span>
-              <input required value={encounterId} onChange={(e) => setEncounterId(e.target.value)} placeholder="กรอก Encounter ID หรือเลือกจากคิว" />
-            </label>
+            <div className="inline-alert" role="status">{encounter ? <><strong>{encounter.patient?.display_name || 'ผู้ป่วย'} · HN {encounter.patient?.hn || '—'}</strong><br />คิว {encounter.current_queue_no} · {encounter.current_station}</> : 'เลือกผู้ป่วยจากคิวห้องตรวจด้านล่างก่อนบันทึก'}</div>
 
             <div className="form-two">
               <label>
@@ -183,18 +207,44 @@ export default function PhysicianPage() {
               <span className="eyebrow">ORDER ENTRY</span>
               <h4 style={{ margin: '4px 0 10px' }}>สั่งตรวจ / สั่งยา / ส่งรักษาต่อ</h4>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr 100px auto', gap: 8, alignItems: 'center' }}>
-                <select value={orderType} onChange={(e) => setOrderType(e.target.value as OrderItem['type'])}>
+              <div className="order-entry-grid">
+                <select aria-label="ประเภทคำสั่งการรักษา" value={orderType} onChange={(e) => setOrderType(e.target.value as OrderItem['type'])}>
                   <option value="medication">ยา (Medication)</option>
                   <option value="lab">ตรวจแล็บ (Lab)</option>
                   <option value="imaging">รังสี/เอกซเรย์ (Imaging)</option>
-                  <option value="chemo">เคมีบำบัด (Chemo)</option>
-                  <option value="radiation">รังสีรักษา (RT)</option>
+                  <option value="infusion">สารน้ำ / ยาทางหลอดเลือด / เคมีบำบัด</option>
                 </select>
-                <input value={orderName} onChange={(e) => setOrderName(e.target.value)} placeholder="ชื่อยา / รายการตรวจ เช่น Paracetamol 500mg, CBC" />
-                <input type="number" min="1" value={orderQty} onChange={(e) => setOrderQty(Number(e.target.value))} placeholder="จำนวน" />
-                <button type="button" className="button secondary" onClick={addOrder}><Plus size={16} /> เพิ่ม</button>
+                {orderType === 'infusion' ? (
+                  <select aria-label="รูปแบบบริการ Infusion" value={infusionTemplateId} onChange={(e) => setInfusionTemplateId(e.target.value)}>
+                    {infusionTemplates.map((template) => (
+                      <option key={template.id} value={template.id}>{template.name}{template.is_demo ? ' · ตัวอย่าง' : ''}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input aria-label="ชื่อรายการ" value={orderName} onChange={(e) => setOrderName(e.target.value)} placeholder="ชื่อยา / รายการตรวจ เช่น Paracetamol 500mg, CBC" />
+                )}
+                <input aria-label="จำนวน" type="number" min="1" value={orderQty} onChange={(e) => setOrderQty(Number(e.target.value))} placeholder="จำนวน" />
+                <button type="button" className="button secondary" onClick={addOrder}><Plus size={16} aria-hidden="true" /> เพิ่ม</button>
               </div>
+
+              {orderType === 'infusion' && (
+                <div className="form-two infusion-order-options">
+                  <label>
+                    <span>วันที่วางแผน (ไม่ใช่การจองเก้าอี้)</span>
+                    <input type="datetime-local" value={infusionPlannedFor} onChange={(e) => setInfusionPlannedFor(e.target.value)} />
+                  </label>
+                  <label>
+                    <span>เวลารวมเฉพาะราย (นาที) · ไม่บังคับ</span>
+                    <input type="number" min="1" max="1440" value={infusionDuration} onChange={(e) => setInfusionDuration(e.target.value)} placeholder="ใช้เวลาจากเก้าอี้หรือ Template" />
+                  </label>
+                </div>
+              )}
+              {orderType === 'medication' && (
+                <div className="form-two infusion-order-options">
+                  <label><span>ขนาดยา</span><input value={orderDose} onChange={(event) => setOrderDose(event.target.value)} placeholder="เช่น 500 mg" /></label>
+                  <label><span>ความถี่ / วิธีใช้</span><input value={orderFreq} onChange={(event) => setOrderFreq(event.target.value)} placeholder="เช่น วันละ 1 ครั้ง หลังอาหาร" /></label>
+                </div>
+              )}
 
               {orders.length > 0 && (
                 <div style={{ marginTop: 10, display: 'grid', gap: 6 }}>
@@ -203,8 +253,8 @@ export default function PhysicianPage() {
                       <div>
                         <strong>[{ord.type}] {ord.name}</strong> (จำนวน: {ord.quantity})
                       </div>
-                      <button type="button" onClick={() => removeOrder(ord.id)} style={{ border: 0, background: 'transparent', color: 'var(--danger)' }}>
-                        <Trash2 size={15} />
+                      <button type="button" aria-label={`ลบคำสั่ง ${ord.name}`} onClick={() => removeOrder(ord.id)} style={{ border: 0, background: 'transparent', color: 'var(--danger)' }}>
+                        <Trash2 size={15} aria-hidden="true" />
                       </button>
                     </div>
                   ))}
@@ -229,7 +279,7 @@ export default function PhysicianPage() {
                 {selectedRoute.map((code, index) => (
                   <span key={code} className="status-pill flowing" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px' }}>
                     {index + 1}. {code} ({stationMap.get(code)?.name})
-                    <button type="button" onClick={() => removeRouteStation(code)} style={{ border: 0, background: 'transparent', color: 'inherit', padding: 0 }}><X size={12} /></button>
+                    <button type="button" aria-label={`นำ ${code} ออกจากเส้นทาง`} onClick={() => removeRouteStation(code)} style={{ border: 0, background: 'transparent', color: 'inherit', padding: 0 }}><X size={12} aria-hidden="true" /></button>
                   </span>
                 ))}
               </div>
@@ -257,19 +307,19 @@ export default function PhysicianPage() {
           {/* Quick Doctor Tools */}
           <div style={{ display: 'grid', gap: 14 }}>
             <div className="workspace-card" style={{ padding: 20 }}>
-              <h3 style={{ marginTop: 0 }}>Clinical Protocols & Presets</h3>
+              <h3 style={{ marginTop: 0 }}>เส้นทางใช้งานบ่อย</h3>
               <p style={{ fontSize: '.82rem', color: 'var(--muted)' }}>
                 เลือก Preset เส้นทางด่วนสำหรับการรักษายอดนิยม:
               </p>
               <div style={{ display: 'grid', gap: 8 }}>
                 <button type="button" className="button secondary" style={{ justifyContent: 'flex-start' }} onClick={() => setSelectedRoute(['LAB', 'PD'])}>
-                  🧬 ตรวจแล็บ + รับยา (LAB → PD → DH)
+                  <FlaskConical size={17} aria-hidden="true" /> ตรวจแล็บ + รับยา (LAB → PD → DH)
                 </button>
-                <button type="button" className="button secondary" style={{ justifyContent: 'flex-start' }} onClick={() => setSelectedRoute(['CHEMO', 'PD'])}>
-                  💉 รับยาเคมีบำบัด + รับยากลับบ้าน (CHEMO → PD → DH)
+                <button type="button" className="button secondary" style={{ justifyContent: 'flex-start' }} onClick={() => setSelectedRoute(['INFUSION', 'PD'])}>
+                  <Droplets size={17} aria-hidden="true" /> Infusion Lounge + รับยากลับบ้าน (INFUSION → PD → DH)
                 </button>
                 <button type="button" className="button secondary" style={{ justifyContent: 'flex-start' }} onClick={() => setSelectedRoute(['XR', 'RC', 'PD'])}>
-                  📷 เอกซเรย์ + พบแพทย์ฟังผล + รับยา (XR → RC → PD → DH)
+                  <Scan size={17} aria-hidden="true" /> เอกซเรย์ + พบแพทย์ฟังผล + รับยา (XR → RC → PD → DH)
                 </button>
               </div>
             </div>
@@ -277,7 +327,7 @@ export default function PhysicianPage() {
         </div>
 
         {/* Doctor Queue Workspace */}
-        <QueueWorkspace role="doctor" onSelectEncounter={setEncounterId} />
+        <QueueWorkspace role="doctor" stationCodes={['PC', 'PC2', 'PC3', 'PC4']} onSelectEncounter={(id) => void selectEncounter(id)} />
       </div>
     </StaffShell>
   )

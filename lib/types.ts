@@ -9,8 +9,8 @@ export type Role =
   | 'vitals_staff'
   | 'lab_staff'
   | 'pharmacy_staff'
-  | 'chemo_staff'
-  | 'rt_staff'
+  | 'infusion_staff'
+  | 'chemo_staff' // Legacy session/user value; migrated to infusion_staff on startup.
   | 'patient'
 
 export type PublicUser = {
@@ -22,6 +22,30 @@ export type PublicUser = {
   station_codes?: string[]
   permissions?: string[]
 }
+
+export type FlowEstimateSource = 'history' | 'configured_fallback'
+
+export type FlowEstimate = {
+  p50_min: number
+  p80_min: number
+  sample_count: number
+  source: FlowEstimateSource
+  window_days: number
+}
+
+export type FlowPlanSegment = {
+  id: string
+  encounter_id?: string
+  station_code: string
+  baseline_start_at: string
+  baseline_end_at: string
+  adapted_start_at: string
+  adapted_end_at: string
+  shift_min: number
+  reason: string
+}
+
+export type FlowState = 'flowing' | 'building' | 'bottleneck' | 'idle'
 
 export type Patient = {
   id: string
@@ -122,7 +146,7 @@ export type ClinicalNote = {
 
 export type OrderItem = {
   id: string
-  type: 'lab' | 'imaging' | 'medication' | 'chemo' | 'radiation' | 'procedure'
+  type: 'lab' | 'imaging' | 'medication' | 'infusion' | 'procedure'
   code: string
   name: string
   quantity?: number
@@ -133,6 +157,14 @@ export type OrderItem = {
   status: 'ordered' | 'in_progress' | 'sample_collected' | 'analyzed' | 'prepared' | 'ready' | 'dispensed' | 'completed' | 'cancelled'
   results?: string | Record<string, unknown>
   target_station?: string
+  service_template_id?: string
+  planned_for?: string
+  duration_override_min?: number
+  readiness_override?: boolean
+  readiness_metadata?: {
+    requirements: InfusionReadinessRequirement[]
+    source: 'service_template'
+  }
 }
 
 export type ClinicalOrder = {
@@ -141,9 +173,12 @@ export type ClinicalOrder = {
   patient_id: string
   patient?: { hn?: string; display_name?: string }
   doctor_id: string
-  order_type: 'lab' | 'imaging' | 'medication' | 'chemo' | 'radiation' | 'mixed'
+  order_type: 'lab' | 'imaging' | 'medication' | 'infusion' | 'mixed'
   items: OrderItem[]
   status: 'pending' | 'in_progress' | 'completed' | 'cancelled'
+  version?: number
+  lab_status?: 'ordered' | 'sample_collected' | 'results_recorded' | 'verified'
+  pharmacy_status?: 'waiting' | 'preparing' | 'ready' | 'dispensed'
   notes?: string
   created_at?: string
   updated_at?: string
@@ -163,6 +198,7 @@ export type LabOrder = {
   patient_id: string
   patient?: { hn?: string; display_name?: string }
   order_id?: string
+  order_item_id?: string
   items: Array<{
     code: string
     name: string
@@ -203,44 +239,121 @@ export type PharmacyPrescription = {
   updated_at?: string
 }
 
-export type ChemoSession = {
-  id: string
-  encounter_id: string
-  patient_id: string
-  patient?: { hn?: string; display_name?: string }
-  chair_no: number
-  protocol_name: string
-  cycle_no: number
-  total_cycles?: number
-  premed_completed: boolean
-  progress_percent: number
-  total_duration_min: number
-  remaining_min: number
-  nurse_call: boolean
-  nurse_call_note?: string
-  status: 'assigned' | 'premed' | 'infusing' | 'paused' | 'completed'
-  started_at?: string
-  completed_at?: string
-  created_at?: string
+export type InfusionPhaseKind = 'preparation' | 'premed' | 'infusion' | 'observation'
+
+export type InfusionPhaseTemplate = {
+  key: string
+  label: string
+  kind: InfusionPhaseKind
+  duration_min: number
 }
 
-export type RadiationSession = {
+export type InfusionReadinessRequirement = 'active_order' | 'lab_verified' | 'medication_ready'
+
+export type InfusionChair = {
   id: string
-  encounter_id?: string
-  patient_id: string
-  patient?: { hn?: string; display_name?: string }
-  machine_code: 'RT_SIM' | 'RT_L1' | 'RT_L2' | 'BRA'
-  machine_name: string
-  fraction_no: number
-  total_fractions: number
-  dose_gy: number
-  scheduled_time: string
-  status: 'scheduled' | 'arrived' | 'in_progress' | 'completed' | 'rescheduled' | 'no_show'
-  notes?: string
-  therapist_id?: string
+  code: string
+  label: string
+  sort_order: number
+  default_duration_min?: number
+  is_active: boolean
+  created_at?: string
+  updated_at?: string
+}
+
+export type InfusionTemplate = {
+  id: string
+  code: string
+  name: string
+  service_kind: 'hydration' | 'iv_medication' | 'chemotherapy'
+  phases: InfusionPhaseTemplate[]
+  readiness_requirements: InfusionReadinessRequirement[]
+  is_active: boolean
+  is_demo?: boolean
+  created_at?: string
+  updated_at?: string
+}
+
+export type InfusionPhase = InfusionPhaseTemplate & {
+  status: 'pending' | 'active' | 'paused' | 'due' | 'completed'
+  effective_duration_sec: number
+  remaining_sec: number
   started_at?: string
   completed_at?: string
-  created_at?: string
+  paused_at?: string
+}
+
+export type InfusionSessionStatus = 'reserved' | 'active' | 'paused' | 'due' | 'completed' | 'no_show' | 'cancelled'
+
+export type InfusionSession = {
+  id: string
+  chair_id: string
+  chair?: InfusionChair
+  encounter_id?: string
+  queue_item_id?: string
+  order_id?: string
+  order_item_id?: string
+  patient_id: string
+  patient?: { hn?: string; display_name?: string }
+  template_id?: string
+  template_name: string
+  service_kind: 'hydration' | 'iv_medication' | 'chemotherapy'
+  status: InfusionSessionStatus
+  phases: InfusionPhase[]
+  current_phase_index: number
+  planned_duration_sec: number
+  remaining_sec: number
+  progress_percent: number
+  version: number
+  reserved_at?: string
+  started_at?: string
+  completed_at?: string
+  created_at: string
+  updated_at?: string
+}
+
+export type InfusionQueueEntry = QueueItem & {
+  order_id?: string
+  order_item_id?: string
+  template_id?: string
+  template_name?: string
+  service_kind?: 'hydration' | 'iv_medication' | 'chemotherapy'
+  planned_for?: string
+  duration_override_min?: number
+  readiness: {
+    ready: boolean
+    requirements: Array<{ key: InfusionReadinessRequirement; ready: boolean; label: string }>
+    overridden?: boolean
+    override_reason?: string
+  }
+}
+
+export type InfusionEvent = {
+  id: string
+  session_id?: string
+  chair_id?: string
+  queue_item_id?: string
+  action: string
+  reason?: string
+  performed_by?: string
+  metadata?: Record<string, unknown>
+  created_at: string
+}
+
+export type InfusionBoard = {
+  server_now: string
+  chairs: Array<InfusionChair & { session?: InfusionSession }>
+  queue: InfusionQueueEntry[]
+  planned: InfusionQueueEntry[]
+  suggested_next?: InfusionQueueEntry
+  templates: InfusionTemplate[]
+  kpis: {
+    active_chairs: number
+    total_chairs: number
+    infusing: number
+    due: number
+    waiting: number
+  }
 }
 
 export type RouteStep = {
@@ -250,6 +363,12 @@ export type RouteStep = {
   started_at?: string
   completed_at?: string
   estimated_wait_min?: number
+  baseline_start_at?: string
+  baseline_end_at?: string
+  adapted_start_at?: string
+  adapted_end_at?: string
+  shift_min?: number
+  adaptation_reason?: string
 }
 
 export type Encounter = {
@@ -294,6 +413,7 @@ export type QueueItem = {
   encounter?: { encounter_no?: string; priority?: string; current_station?: string }
   created_at?: string
   updated_at?: string
+  version?: number
 }
 
 export type QueueData = {
@@ -408,23 +528,42 @@ export type FlowEngineRecommendation = {
   reason: string
   action_label: string
   status: 'pending' | 'accepted' | 'rejected' | 'dismissed'
+  version?: number
+  decision_reason?: string
+  decided_by?: string
+  resolved_at?: string
   created_at: string
+}
+
+export type FlowRecommendationDecision = {
+  recommendation_id: string
+  decision: 'accepted' | 'rejected'
+  actor_id: string
+  reason: string
+  version: number
+  decided_at: string
 }
 
 export type StationFlowStatus = {
   code: string
   name: string
   floor: string
-  state: 'flowing' | 'building' | 'bottleneck' | 'idle'
+  state: FlowState
   waiting_count: number
   in_progress_count: number
   capacity: number
   avg_service_min: number
   est_wait_min: number
+  est_wait_p80_min: number
+  estimate: FlowEstimate
+  queue_pressure: number
   throughput_per_hour: number
 }
 
 export type OperationsSnapshot = {
+  server_now: string
+  generated_at: string
+  data_window: { days: number; from: string; to: string }
   kpis: {
     total_patients_today: number
     active_now: number
@@ -436,4 +575,71 @@ export type OperationsSnapshot = {
   stations: StationFlowStatus[]
   recommendations: FlowEngineRecommendation[]
   hourly_flow?: Array<{ hour: string; arrivals: number; discharges: number }>
+}
+
+export type FlowScheduleSlot = {
+  id: string
+  encounter_id?: string
+  appointment_id?: string
+  patient?: { hn?: string; display_name?: string }
+  station_code: string
+  station_name: string
+  status: 'planned' | 'waiting' | 'called' | 'in_progress' | 'completed'
+  baseline_start_at: string
+  baseline_end_at: string
+  adapted_start_at: string
+  adapted_end_at: string
+  shift_min: number
+  reason: string
+}
+
+export type ActivePatientFlow = {
+  id: string
+  encounter_no: string
+  patient: { hn?: string; display_name?: string }
+  priority: 'normal' | 'urgent' | 'fast_track'
+  current_station: string
+  station_name: string
+  queue_no: string
+  queue_status: QueueItem['status'] | ''
+  waiting_since?: string
+  est_wait_min: number
+  est_wait_p80_min: number
+  route: RouteStep[]
+  updated_at: string
+}
+
+export type OperationsInsights = {
+  generated_at: string
+  from: string
+  to: string
+  totals: {
+    arrivals: number
+    completed: number
+    completion_rate_percent: number
+    avg_visit_min: number
+    avg_wait_min: number
+  }
+  hourly_flow: Array<{ hour: string; arrivals: number; discharges: number }>
+  station_performance: StationFlowStatus[]
+}
+
+export type MapMovement = {
+  from_station: string
+  to_station: string
+  patient_count: number
+}
+
+export type MapOverview = {
+  generated_at: string
+  floors: Array<{ floor: string; stations: StationFlowStatus[] }>
+  movements: MapMovement[]
+}
+
+export type RealtimeEnvelope = {
+  id: string
+  channel: string
+  type: string
+  payload: unknown
+  timestamp: string
 }

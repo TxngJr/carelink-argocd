@@ -11,11 +11,14 @@ const STATUS_LABEL: Record<string, string> = {
 
 type Props = {
   role: 'nurse' | 'doctor'
+  stationCodes?: string[]
   onSelectEncounter?: (id: string) => void
 }
 
-export function QueueWorkspace({ role, onSelectEncounter }: Props) {
-  const allowed = useMemo(() => STATIONS.filter((station) => role === 'doctor' ? PC_CODES.has(station.code) : !PC_CODES.has(station.code)), [role])
+export function QueueWorkspace({ role, stationCodes, onSelectEncounter }: Props) {
+  const allowed = useMemo(() => STATIONS.filter((station) => stationCodes
+    ? stationCodes.includes(station.code)
+    : role === 'doctor' ? PC_CODES.has(station.code) : !PC_CODES.has(station.code)), [role, stationCodes])
   const [station, setStation] = useState(allowed[0]?.code || 'NPR')
   const [data, setData] = useState<QueueData>({ items: [], now_serving: [], counts: { waiting: 0, called: 0, in_progress: 0 } })
   const [loading, setLoading] = useState(true)
@@ -44,6 +47,14 @@ export function QueueWorkspace({ role, onSelectEncounter }: Props) {
     }
   }, [load])
 
+  useEffect(() => {
+    const source = new EventSource('/api/realtime/stream?scope=staff')
+    const refresh = () => void load(true)
+    const events = ['queue_updated', 'queue_called', 'queue_started', 'queue_recalled', 'queue_skipped', 'queue_requeued', 'encounter_moved']
+    events.forEach((name) => source.addEventListener(name, refresh))
+    return () => source.close()
+  }, [load])
+
   async function action(name: 'call' | 'start' | 'complete' | 'recall' | 'skip' | 'requeue', item?: QueueItem) {
     if (name === 'complete' && item && !window.confirm(`ยืนยันว่า ${item.queue_no} เสร็จที่ ${station} และส่งไป Station ถัดไป?`)) return
     const key = item?.id || name
@@ -51,7 +62,7 @@ export function QueueWorkspace({ role, onSelectEncounter }: Props) {
     setError('')
     try {
       if (name === 'call') await clientApi.callNext(station)
-      else if (item) await clientApi.queueAction(station, item.id, name)
+      else if (item) await clientApi.queueAction(station, item.id, name, item.version || 1)
       await load(true)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'ทำรายการไม่สำเร็จ')
@@ -95,7 +106,7 @@ export function QueueWorkspace({ role, onSelectEncounter }: Props) {
               <div className="queue-number-block"><strong>{item.queue_no}</strong><span className={`status-pill ${item.status}`}>{STATUS_LABEL[item.status] || item.status}</span></div>
               <div className="queue-patient"><strong>{item.patient?.display_name || 'ผู้ป่วย'}</strong><span>HN {item.patient?.hn || '-'}</span></div>
               <div className="queue-actions">
-                {role === 'doctor' && onSelectEncounter && <button className="button ghost" onClick={() => onSelectEncounter(item.encounter_id)}>กำหนดเส้นทาง</button>}
+                {onSelectEncounter && <button className="button ghost" onClick={() => onSelectEncounter(item.encounter_id)}>{role === 'doctor' ? 'เปิดบริบทผู้ป่วย' : 'เลือกผู้ป่วย'}</button>}
                 {item.status === 'called' && <button className="button success" disabled={busy === item.id} onClick={() => void action('start', item)}>เริ่ม</button>}
                 {item.status === 'called' && <button className="button secondary" disabled={busy === item.id} onClick={() => void action('recall', item)}>เรียกซ้ำ</button>}
                 {(item.status === 'waiting' || item.status === 'called') && <button className="button danger-outline" disabled={busy === item.id} onClick={() => void action('skip', item)}>ข้าม</button>}

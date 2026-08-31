@@ -1,13 +1,15 @@
 'use client'
 
 import React, { useState } from 'react'
-import { Activity, AlertCircle, CheckCircle2, HeartPulse, Scale, Send, Thermometer } from 'lucide-react'
+import { AlertCircle } from 'lucide-react'
 import { StaffShell } from '@/components/staff-shell'
 import { QueueWorkspace } from '@/components/queue-workspace'
 import { clientApi } from '@/lib/client'
+import type { Encounter } from '@/lib/types'
 
 export default function VitalsPage() {
   const [encounterId, setEncounterId] = useState('')
+  const [encounter, setEncounter] = useState<Encounter | null>(null)
   const [sbp, setSbp] = useState('120')
   const [dbp, setDbp] = useState('80')
   const [pulse, setPulse] = useState('78')
@@ -32,7 +34,7 @@ export default function VitalsPage() {
   async function handleSaveVitals(e: React.FormEvent) {
     e.preventDefault()
     if (!encounterId) {
-      setMessage('กรุณาระบุ Encounter ID หรือเลือกคิวผู้ป่วยจากตารางคิวด้านล่าง')
+      setMessage('กรุณาเลือกผู้ป่วยจากคิว VM ด้านล่าง')
       return
     }
     setBusy(true)
@@ -56,6 +58,12 @@ export default function VitalsPage() {
     } finally {
       setBusy(false)
     }
+  }
+
+  async function selectEncounter(id: string) {
+    setEncounterId(id)
+    setEncounter(await clientApi.getEncounterDetail(id))
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   return (
@@ -82,15 +90,7 @@ export default function VitalsPage() {
             </div>
 
             <form style={{ padding: '0 20px 24px', display: 'grid', gap: 14 }} onSubmit={handleSaveVitals}>
-              <label>
-                <span>Encounter ID ผู้ป่วย <em>*</em></span>
-                <input
-                  required
-                  value={encounterId}
-                  onChange={(e) => setEncounterId(e.target.value)}
-                  placeholder="กรอก Encounter ID หรือกดคัดลอกจากคิว"
-                />
-              </label>
+              <div className="inline-alert" role="status">{encounter ? <><strong>{encounter.patient?.display_name || 'ผู้ป่วย'} · HN {encounter.patient?.hn || '—'}</strong><br />คิว {encounter.current_queue_no} · {encounter.current_station}</> : 'เลือกผู้ป่วยจากคิว VM ด้านล่างก่อนบันทึก'}</div>
 
               <div className="form-two">
                 <label>
@@ -141,10 +141,12 @@ export default function VitalsPage() {
                 <input type="number" min="0" max="10" value={painScore} onChange={(e) => setPainScore(e.target.value)} />
               </label>
 
+              <label><span>บันทึกเพิ่มเติม</span><textarea rows={2} value={notes} onChange={(event) => setNotes(event.target.value)} /></label>
+
               {/* Warning flags */}
               {(isHypertension || isHypoxia || isFever) && (
                 <div className="inline-alert warning" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <AlertCircle size={18} />
+                  <AlertCircle size={18} aria-hidden="true" />
                   <div>
                     {isHypertension && <div>• ความดันโลหิตสูงกว่าเกณฑ์ปกติ (SBP ≥ 140 หรือ DBP ≥ 90)</div>}
                     {isHypoxia && <div>• ค่าความอิ่มตัวออกซิเจนต่ำ (SpO₂ &lt; 95%)</div>}
@@ -168,7 +170,8 @@ export default function VitalsPage() {
           {/* Quick Guide Card */}
           <div style={{ display: 'grid', gap: 14 }}>
             <div className="workspace-card" style={{ padding: 20 }}>
-              <h3 style={{ marginTop: 0 }}>เกณฑ์คัดกรองค่าวิกฤต (Critical Ranges)</h3>
+              <h3 style={{ marginTop: 0 }}>ช่วงตัวอย่างสำหรับการศึกษา</h3>
+              <p className="inline-alert warning">ไม่ใช่เกณฑ์หรือ protocol ทางคลินิกจริง ต้องให้บุคลากรทางการแพทย์ประเมินตามมาตรฐานของหน่วยงาน</p>
               <div style={{ display: 'grid', gap: 8, fontSize: '.82rem', color: 'var(--muted)' }}>
                 <div style={{ padding: 8, background: '#f8faf9', borderRadius: 8 }}>
                   <strong>BP ปกติ:</strong> 90–120 / 60–80 mmHg
@@ -188,7 +191,7 @@ export default function VitalsPage() {
         </div>
 
         {/* Station VM Queue Control */}
-        <QueueWorkspace role="nurse" />
+        <QueueWorkspace role="nurse" stationCodes={['VM']} onSelectEncounter={(id) => void selectEncounter(id)} />
       </div>
     </StaffShell>
   )

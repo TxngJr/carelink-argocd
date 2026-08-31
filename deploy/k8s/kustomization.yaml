@@ -3,9 +3,11 @@ kind: Kustomization
 namespace: carelink
 resources:
   - namespace.yaml
+  - configmap.yaml
   - secret.yaml
   - mongo.yaml
   - app.yaml
+  - operations.yaml
 labels:
   - pairs:
       app.kubernetes.io/part-of: carelink

@@ -1,0 +1,167 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: carelink
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: carelink
+      app.kubernetes.io/component: app
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mongo-backup
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: mongo-backup
+spec:
+  schedule: "0 2 * * *"
+  timeZone: Asia/Bangkok
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: carelink
+            app.kubernetes.io/component: backup
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            seccompProfile: { type: RuntimeDefault }
+          containers:
+            - name: mongodump
+              image: mongo:7
+              command: ["/bin/sh", "-c"]
+              args:
+                - >-
+                  set -eu;
+                  stamp="$(date -u +%Y%m%dT%H%M%SZ)";
+                  mongodump --uri="mongodb://mongo-0.mongo:27017/?replicaSet=rs0" --db=carelink --archive="/backup/carelink-${stamp}.archive" --gzip;
+                  find /backup -type f -name 'carelink-*.archive' -mtime +6 -delete
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities: { drop: [ALL] }
+              resources:
+                requests: { cpu: 50m, memory: 128Mi }
+                limits: { cpu: 500m, memory: 512Mi }
+              volumeMounts:
+                - name: backup
+                  mountPath: /backup
+          volumes:
+            - name: backup
+              persistentVolumeClaim:
+                claimName: mongo-backup
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: carelink-app
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: carelink
+      app.kubernetes.io/component: app
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - ports:
+        - { protocol: TCP, port: 3000 }
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: carelink
+              app.kubernetes.io/component: mongo
+      ports:
+        - { protocol: TCP, port: 27017 }
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: carelink-mongo
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: carelink
+      app.kubernetes.io/component: mongo
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: carelink
+              app.kubernetes.io/component: app
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: carelink
+              app.kubernetes.io/component: backup
+      ports:
+        - { protocol: TCP, port: 27017 }
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: carelink
+              app.kubernetes.io/component: mongo
+      ports:
+        - { protocol: TCP, port: 27017 }
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: carelink-backup
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: carelink
+      app.kubernetes.io/component: backup
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: carelink
+              app.kubernetes.io/component: mongo
+      ports:
+        - { protocol: TCP, port: 27017 }
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }

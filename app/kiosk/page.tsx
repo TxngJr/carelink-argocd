@@ -1,167 +1,71 @@
 'use client'
 
-import React, { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import Image from 'next/image'
 import Link from 'next/link'
-import {
-  ArrowRight,
-  Clock,
-  LogOut,
-  MapPin,
-  QrCode,
-  RefreshCw,
-  Search,
-  ShieldCheck,
-  User,
-} from 'lucide-react'
+import { LogOut, Search, ShieldCheck } from 'lucide-react'
 import { clientApi } from '@/lib/client'
 import type { Journey, Patient } from '@/lib/types'
 
 const INACTIVITY_TIMEOUT_SEC = 90
 
 export default function KioskPage() {
-  const [searchTerm, setSearchTerm] = useState('')
-  const [patient, setPatient] = useState<Patient | null>(null)
+  const [identifier, setIdentifier] = useState('')
+  const [birthDate, setBirthDate] = useState('')
+  const [patient, setPatient] = useState<Pick<Patient, 'display_name' | 'hn'> | null>(null)
   const [journey, setJourney] = useState<Journey | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [countdown, setCountdown] = useState(INACTIVITY_TIMEOUT_SEC)
-  const timerRef = useRef<NodeJS.Timeout | null>(null)
 
-  function resetSession() {
-    setSearchTerm('')
+  const resetSession = useCallback(() => {
+    setIdentifier('')
+    setBirthDate('')
     setPatient(null)
     setJourney(null)
     setError('')
     setCountdown(INACTIVITY_TIMEOUT_SEC)
-  }
+  }, [])
 
-  // Handle inactivity countdown
+  const lookup = useCallback(async () => {
+    if (!identifier.trim() || !birthDate) return
+    const result = await clientApi.getKioskJourney(identifier.trim(), birthDate)
+    setPatient(result.patient)
+    setJourney(result.journey)
+    setCountdown(INACTIVITY_TIMEOUT_SEC)
+  }, [birthDate, identifier])
+
   useEffect(() => {
     if (!patient) return
+    const interval = window.setInterval(() => setCountdown((previous) => {
+      if (previous <= 1) { resetSession(); return INACTIVITY_TIMEOUT_SEC }
+      return previous - 1
+    }), 1000)
+    return () => window.clearInterval(interval)
+  }, [patient, resetSession])
 
-    const interval = setInterval(() => {
-      setCountdown((prev) => {
-        if (prev <= 1) {
-          resetSession()
-          return INACTIVITY_TIMEOUT_SEC
-        }
-        return prev - 1
-      })
-    }, 1000)
+  useEffect(() => {
+    if (!patient) return
+    const source = new EventSource('/api/realtime/stream?scope=public')
+    const refresh = () => void lookup().catch(() => undefined)
+    source.addEventListener('queue_updated', refresh)
+    source.addEventListener('queue_called', refresh)
+    return () => source.close()
+  }, [lookup, patient])
 
-    return () => clearInterval(interval)
-  }, [patient])
-
-  async function handleSearch(e: React.FormEvent) {
-    e.preventDefault()
-    if (!searchTerm.trim()) return
+  async function handleSearch(event: React.FormEvent) {
+    event.preventDefault()
     setLoading(true)
     setError('')
-    try {
-      const results = await clientApi.searchPatients(searchTerm.trim())
-      if (results && results.length > 0) {
-        setPatient(results[0])
-        setCountdown(INACTIVITY_TIMEOUT_SEC)
-      } else {
-        setError('ไม่พบข้อมูลผู้ป่วยด้วยหมายเลขที่ระบุ กรุณาติดต่อเคาน์เตอร์ลงทะเบียน')
-      }
-    } catch {
-      setError('เกิดข้อผิดพลาดในการค้นหา กรุณาลองใหม่อีกครั้ง')
-    } finally {
-      setLoading(false)
-    }
+    try { await lookup() }
+    catch (cause) { setError(cause instanceof Error ? cause.message : 'ค้นหาข้อมูลไม่สำเร็จ กรุณาลองใหม่') }
+    finally { setLoading(false) }
   }
 
-  return (
-    <div className="kiosk-shell">
-      <div className="kiosk-card">
-        {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            <img src="/logo-mark.svg" alt="CareLink" width={46} height={46} />
-            <div>
-              <h2 style={{ margin: 0 }}>ตู้บริการตนเอง CareLink Kiosk</h2>
-              <span style={{ color: 'var(--muted)', fontSize: '.85rem' }}>ตรวจสอบสถานะคิวและจุดรับบริการ</span>
-            </div>
-          </div>
-          {patient && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontSize: '.8rem', color: 'var(--muted)' }}>ปิดหน้าต่างอัตโนมัติใน {countdown} วิ</span>
-              <button className="button danger-outline" onClick={resetSession} style={{ minHeight: 36, padding: '0 12px' }}>
-                <LogOut size={16} /> เสร็จสิ้น
-              </button>
-            </div>
-          )}
-        </div>
+  return <div className="kiosk-shell"><div className="kiosk-card">
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><div style={{ display: 'flex', alignItems: 'center', gap: 14 }}><Image src="/logo-mark.svg" alt="CareLink" width={46} height={46} priority /><div><h2 style={{ margin: 0 }}>ตู้บริการตนเอง CareLink</h2><span style={{ color: 'var(--muted)', fontSize: '.85rem' }}>ตรวจสอบสถานะคิวด้วยข้อมูลที่ตรงกันเท่านั้น</span></div></div>{patient && <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><span>ปิดอัตโนมัติใน {countdown} วินาที</span><button className="button danger-outline" onClick={resetSession}><LogOut size={16} aria-hidden="true" /> เสร็จสิ้น</button></div>}</div>
 
-        {!patient ? (
-          /* Search Step */
-          <form onSubmit={handleSearch} style={{ display: 'grid', gap: 18 }}>
-            <div style={{ padding: '24px', background: '#f5f9f8', borderRadius: 20, textAlign: 'center' }}>
-              <h3 style={{ margin: '0 0 8px' }}>กรุณากรอกเบอร์โทรศัพท์ หรือหมายเลข HN</h3>
-              <p style={{ margin: 0, color: 'var(--muted)', fontSize: '.88rem' }}>
-                ระบบจะค้นหาและแสดงบัตรคิว เส้นทางการรักษา และเวลารอคอยของคุณ
-              </p>
-            </div>
-
-            <div style={{ position: 'relative' }}>
-              <Search size={22} style={{ position: 'absolute', left: 16, top: 16, color: 'var(--muted)' }} />
-              <input
-                style={{ height: 56, paddingLeft: 50, fontSize: '1.2rem', borderRadius: 16 }}
-                type="tel"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="เช่น 0812345678 หรือ HN000101"
-                autoFocus
-              />
-            </div>
-
-            {error && <div className="inline-alert danger">{error}</div>}
-
-            <button className="button primary large" style={{ height: 56, fontSize: '1.15rem' }} disabled={loading}>
-              {loading ? 'กำลังค้นหาข้อมูล…' : 'ค้นหาบัตรคิวของฉัน'}
-            </button>
-          </form>
-        ) : (
-          /* Ticket Result Step */
-          <div style={{ display: 'grid', gap: 20 }}>
-            <div className="kiosk-ticket">
-              <span className="eyebrow" style={{ color: 'var(--brand)' }}>ACTIVE QUEUE TICKET</span>
-              <p style={{ margin: 0, color: 'var(--muted)' }}>ผู้ป่วย: <strong>{patient.display_name}</strong> (HN: {patient.hn})</p>
-              <h2>NPR-001</h2>
-              <div style={{ display: 'flex', justifyContent: 'center', gap: 16, fontSize: '1rem', color: 'var(--ink)' }}>
-                <span>สถานีปัจจุบัน: <strong>จุดลงทะเบียน (NPR)</strong></span>
-                <span>·</span>
-                <span>ชั้น: <strong>ชั้น 1</strong></span>
-              </div>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <div className="metric-card">
-                <span>คิวข้างหน้าคุณ</span>
-                <strong>2 คิว</strong>
-                <small>ประมาณ 15 นาที</small>
-              </div>
-              <div className="metric-card">
-                <span>สถานีถัดไป</span>
-                <strong style={{ fontSize: '1.1rem' }}>VM · วัดสัญญาณชีพ</strong>
-                <small>ชั้น 1 ห้อง 101</small>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button className="button primary large full" onClick={resetSession}>
-                พิมพ์บัตรคิว / เสร็จสิ้น
-              </button>
-            </div>
-          </div>
-        )}
-
-        <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--muted)', fontSize: '.8rem', borderTop: '1px solid var(--line)', paddingTop: 14 }}>
-          <Link href="/">← กลับหน้าหลัก CareLink</Link>
-          <span>ต้องการความช่วยเหลือ กรุณาติดต่อเคาน์เตอร์ประชาสัมพันธ์</span>
-        </div>
-      </div>
-    </div>
-  )
+    {!patient ? <form onSubmit={handleSearch} style={{ display: 'grid', gap: 18 }}><div style={{ padding: 24, background: '#f5f9f8', borderRadius: 20, textAlign: 'center' }}><ShieldCheck size={30} aria-hidden="true" /><h3>กรอก HN หรือเบอร์โทร และวันเกิด</h3><p>ระบบค้นหาแบบตรงกันทุกตัวอักษร ไม่มีการค้นหาชื่อหรือข้อมูลใกล้เคียง</p></div><label><span>HN หรือเบอร์โทร <em>*</em></span><div style={{ position: 'relative' }}><Search size={20} aria-hidden="true" style={{ position: 'absolute', left: 16, top: 17 }} /><input required value={identifier} onChange={(event) => setIdentifier(event.target.value)} style={{ height: 56, paddingLeft: 50 }} placeholder="HN000101 หรือ 0812345678" autoFocus /></div></label><label><span>วันเกิด <em>*</em></span><input required type="date" value={birthDate} onChange={(event) => setBirthDate(event.target.value)} /></label>{error && <div className="inline-alert danger" role="alert">{error}</div>}<button className="button primary large" disabled={loading}>{loading ? 'กำลังตรวจสอบ…' : 'ตรวจสอบบัตรคิว'}</button></form> : <div style={{ display: 'grid', gap: 20 }}><div className="kiosk-ticket"><span className="eyebrow">บัตรคิวปัจจุบัน</span><p>ผู้ป่วย: <strong>{patient.display_name}</strong> · HN {patient.hn}</p>{journey ? <><h2>{journey.queue_no || '—'}</h2><p>สถานีปัจจุบัน: <strong>{journey.current_station} · {journey.station_name}</strong> · {journey.station_floor}</p></> : <div className="empty-state">ยังไม่มี visit ที่กำลังดำเนินการ</div>}</div>{journey && <div className="queue-summary-grid"><div className="metric-card"><span>คิวข้างหน้า</span><strong>{journey.queue_ahead || 0}</strong><small>ประมาณ {journey.est_wait_min || 0} นาที</small></div><div className="metric-card"><span>สถานีถัดไป</span><strong>{journey.next_station || 'ปลายทาง'}</strong><small>{journey.next_station_name || 'ไม่มีสถานีถัดไป'}</small></div></div>}<button className="button primary large full" onClick={resetSession}>เสร็จสิ้นและล้างข้อมูลหน้าจอ</button></div>}
+    <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--line)', paddingTop: 14 }}><Link href="/">กลับหน้าหลัก CareLink</Link><span>ข้อมูลทั้งหมดเป็นข้อมูลสังเคราะห์สำหรับระบบสาธิต</span></div>
+  </div></div>
 }
