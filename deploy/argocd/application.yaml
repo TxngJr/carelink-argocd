@@ -16,11 +16,8 @@ spec:
     namespace: carelink
   syncPolicy:
     automated:
-      # Disabled only for the one-time rotation away from the legacy
-      # in-repository Secret. Restore this to true after the new Secret is live.
-      prune: false
+      prune: true
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
-      - ServerSideApply=true
       - PruneLast=true

@@ -107,12 +107,6 @@ unset JWT_SECRET
 
 `deploy/k8s` ประกอบด้วย CareLink 2 replicas, MongoDB StatefulSet replica set, NetworkPolicy, PodDisruptionBudget และ MongoDB backup รายคืนบน PVC (เก็บประมาณ 7 วัน) ส่วน Argo CD sync จาก `deploy/k8s` บน branch `main` GitHub Actions จะตรวจ typecheck, lint แบบ zero-warning, unit tests, build, Kustomize render และ container live-health ก่อนสร้าง immutable image
 
-JWT secret ไม่อยู่ใน Git ต้องสร้างหรือเชื่อม external secret ชื่อ `carelink-secrets` ก่อน sync:
+Public demo deploy ได้ครบจาก Git ด้วย Argo CD โดยตรง: `deploy/k8s/secret.yaml` มี `JWT_SECRET` และ `DEVELOPMENT_LOGIN_PASSWORD` แบบ plaintext สำหรับ sandbox นี้โดยเฉพาะ จึงไม่ต้องสร้าง Secret ภายนอกก่อน sync และเปิด automated prune/self-heal ไว้แล้ว เมื่อเปลี่ยนค่า Secret ให้เพิ่ม `carelink.dev/secret-revision` ใน `deploy/k8s/app.yaml` เพื่อ rollout pod ใหม่
 
-```bash
-kubectl -n carelink create secret generic carelink-secrets \
-  --from-literal=JWT_SECRET="$(openssl rand -base64 48)" \
-  --dry-run=client -o yaml | kubectl apply -f -
-```
-
-Argo CD ตั้ง `Prune=false` ชั่วคราวเพื่อไม่ลบ Secret เดิมระหว่างหมุนค่า หลังตรวจว่า deployment ใช้ `carelink-secrets`, session ใหม่ทำงาน และ pod พร้อมทั้ง 2 replicas แล้ว ให้ลบ Secret เดิม `carelink-config` ที่ชนิด Secret และนำ `Prune=false` ออก การติดตั้งจริงยังต้องมี encryption at rest, access logging และ privacy/compliance review ก่อนใช้ข้อมูลผู้ป่วยจริง
+> Secret ที่ commit ไว้เป็นค่าทดสอบสาธารณะ ผู้ที่อ่าน repository สามารถสร้าง session ของ demo ได้ ห้ามใช้ค่าชุดนี้กับข้อมูลผู้ป่วยจริง การติดตั้งจริงต้องย้ายไป External Secrets, Sealed Secrets หรือ SOPS พร้อมหมุน credential, เปิด encryption at rest, access logging และผ่าน privacy/compliance review

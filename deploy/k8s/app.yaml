@@ -27,6 +27,10 @@ spec:
       labels:
         app.kubernetes.io/name: carelink
         app.kubernetes.io/component: app
+      annotations:
+        # Increment when changing values in secret.yaml so existing pods pick
+        # up the new environment variables during the next Argo CD sync.
+        carelink.dev/secret-revision: public-demo-v1
     spec:
       securityContext:
         runAsNonRoot: true
