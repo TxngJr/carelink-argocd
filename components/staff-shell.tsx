@@ -123,7 +123,7 @@ export function StaffShell({
               <div className="sidebar-section-title">{section.section}</div>
               {section.items.map((item) => {
                 const Icon = item.icon
-                const active = pathname === item.href || (item.href !== '/operations' && pathname.startsWith(`${item.href}/`))
+                const active = currentItem?.href === item.href
                 return <Link key={item.href} href={item.href} className={active ? 'active' : ''} aria-current={active ? 'page' : undefined} title={collapsed ? item.label : undefined} onClick={() => setMobileOpen(false)}>
                   <Icon size={19} aria-hidden="true" /><strong>{item.label}</strong>{active && <ChevronLeft size={14} className="nav-current" aria-hidden="true" />}
                 </Link>
