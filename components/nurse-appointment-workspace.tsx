@@ -154,7 +154,7 @@ export function NurseAppointmentWorkspace() {
   }, [])
 
   useEffect(() => {
-    void load()
+    const initial = window.setTimeout(() => void load(), 0)
     const timer = window.setInterval(() => void load(true), 10_000)
     const source = new EventSource('/api/realtime/stream?scope=staff')
     const refresh = () => void load(true)
@@ -162,6 +162,7 @@ export function NurseAppointmentWorkspace() {
       source.addEventListener(eventName, refresh)
     }
     return () => {
+      window.clearTimeout(initial)
       window.clearInterval(timer)
       source.close()
     }
