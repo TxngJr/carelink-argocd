@@ -1,1 +1,0 @@
-build.sh is intended to be executable. If your checkout loses executable metadata, run: chmod +x build.sh
