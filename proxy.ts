@@ -29,10 +29,11 @@ export const config = {
     '/registration/:path*',
     '/vitals/:path*',
     '/intake/:path*',
+    '/doctor/:path*',
     '/physician/:path*',
     '/lab/:path*',
-    '/imaging/:path*',
     '/pharmacy/:path*',
+    '/chemo/:path*',
     '/infusion/:path*',
   ],
 }
