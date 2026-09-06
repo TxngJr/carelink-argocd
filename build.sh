@@ -9,6 +9,8 @@ readonly IMAGE="${IMAGE:-ghcr.io/txngjr/carelink-argocd-web}"
 readonly PLATFORM="${PLATFORM:-linux/amd64}"
 readonly GHCR_USERNAME="${GHCR_USERNAME:-txngjr}"
 GHCR_TOKEN="${GHCR_TOKEN:-}"
+# Never pass the registry token into docker build/buildx child environments.
+export -n GHCR_TOKEN 2>/dev/null || true
 
 pull=0
 no_cache=0
