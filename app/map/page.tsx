@@ -100,7 +100,7 @@ export default function HospitalMapPage() {
   }, [])
 
   useEffect(() => {
-    void load()
+    const initial = window.setTimeout(() => void load(), 0)
     const polling = window.setInterval(() => void load(true), 10_000)
     const source = new EventSource('/api/realtime/stream?scope=staff')
 
@@ -148,6 +148,7 @@ export default function HospitalMapPage() {
     }
 
     return () => {
+      window.clearTimeout(initial)
       window.clearInterval(polling)
       if (refreshTimerRef.current !== null) window.clearTimeout(refreshTimerRef.current)
       if (pulseTimerRef.current !== null) window.clearTimeout(pulseTimerRef.current)
