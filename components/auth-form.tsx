@@ -5,12 +5,16 @@ import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import {
+  Eye,
+  EyeOff,
   KeyRound,
   LoaderCircle,
   LogIn,
   Search,
+  UserPlus,
   UsersRound,
 } from 'lucide-react'
+import { Feedback } from '@/components/ui'
 import { clientApi } from '@/lib/client'
 import { roleHomePath } from '@/lib/access-control'
 import type { DevelopmentAccount } from '@/lib/development-accounts'
@@ -25,6 +29,7 @@ export function AuthForm({ mode, enableDevelopmentLogin = false }: Props) {
   const router = useRouter()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [displayName, setDisplayName] = useState('')
   const [birthDate, setBirthDate] = useState('1990-01-01')
   const [busy, setBusy] = useState(false)
@@ -126,14 +131,14 @@ export function AuthForm({ mode, enableDevelopmentLogin = false }: Props) {
         <p>{isStaff ? 'สำหรับพยาบาล แพทย์ และเจ้าหน้าที่ทุกแผนก เพื่อจัดการนัดหมายและคิวการรักษา' : 'ดูนัดหมาย ติดตามคิวสด และเส้นทางการรับบริการได้จากมือถือ'}</p>
       </div>
 
-      {error && <div className="inline-alert danger auth-error" role="alert">{error}</div>}
+      {error && <Feedback tone="danger" className="auth-error">{error}</Feedback>}
 
       {enableDevelopmentLogin && isStaff && (
         <section className="development-login" aria-labelledby="development-login-title">
           <div className="development-login-heading">
             <div>
               <span className="development-badge"><KeyRound size={14} aria-hidden="true" />Public Sandbox</span>
-              <h2 id="development-login-title">ตารางบัญชีผู้ใช้สำหรับทดสอบ</h2>
+              <h2 id="development-login-title">บัญชีผู้ใช้สำหรับทดสอบตามบทบาท</h2>
               <p>ค้นหาบัญชีหรือกรองตามบทบาท แล้วกดเข้าใช้งานได้ทันทีโดยไม่ต้องกรอกรหัสผ่าน</p>
               <p><strong>ข้อมูลสังเคราะห์และใช้ร่วมกัน:</strong> ผู้ทดสอบอื่นอาจใช้บัญชีเดียวกัน การกระทำจะถูกแยกด้วย demo session และเก็บ audit</p>
             </div>
@@ -195,7 +200,7 @@ export function AuthForm({ mode, enableDevelopmentLogin = false }: Props) {
                   )
                 })}
                 {!developmentAccountsLoading && filteredDevelopmentAccounts.length === 0 && (
-                  <tr><td colSpan={5} className="development-table-message">ไม่พบบัญชีที่ตรงกับคำค้นหา</td></tr>
+                  <tr><td colSpan={5} className="development-table-message"><Search size={18} aria-hidden="true" />ไม่พบบัญชีที่ตรงกับคำค้นหา</td></tr>
                 )}
               </tbody>
             </table>
@@ -208,13 +213,13 @@ export function AuthForm({ mode, enableDevelopmentLogin = false }: Props) {
         {isRegister && (
           <label>
             <span>ชื่อ-นามสกุล</span>
-            <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="เช่น สมชาย ใจดี" autoComplete="name" required />
+            <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="เช่น สมชาย ใจดี" autoComplete="name" disabled={busy} required />
           </label>
         )}
         {isRegister && (
           <label>
             <span>วันเกิด</span>
-            <input type="date" value={birthDate} onChange={(e) => setBirthDate(e.target.value)} required />
+            <input type="date" value={birthDate} onChange={(e) => setBirthDate(e.target.value)} disabled={busy} required />
           </label>
         )}
         <label>
@@ -225,15 +230,24 @@ export function AuthForm({ mode, enableDevelopmentLogin = false }: Props) {
             placeholder={isStaff ? 'กรอกชื่อผู้ใช้ของคุณ' : '0812345678'}
             autoComplete={isStaff ? 'username' : 'tel'}
             inputMode={isStaff ? 'text' : 'tel'}
+            autoFocus={!enableDevelopmentLogin || !isStaff}
             disabled={busy}
             required
           />
         </label>
         <label>
           <span>รหัสผ่าน</span>
-          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={isRegister ? 'อย่างน้อย 6 ตัวอักษร' : '••••••••'} autoComplete={isRegister ? 'new-password' : 'current-password'} minLength={isRegister ? 6 : undefined} disabled={busy} required />
+          <div className="password-field">
+            <input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder={isRegister ? 'อย่างน้อย 6 ตัวอักษร' : '••••••••'} autoComplete={isRegister ? 'new-password' : 'current-password'} minLength={isRegister ? 6 : undefined} disabled={busy} required />
+            <button type="button" className="password-toggle" onClick={() => setShowPassword((value) => !value)} disabled={busy} aria-label={showPassword ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน'} title={showPassword ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน'}>
+              {showPassword ? <EyeOff size={17} aria-hidden="true" /> : <Eye size={17} aria-hidden="true" />}
+            </button>
+          </div>
         </label>
-        <button className="button primary large" type="submit" disabled={busy}>{busy ? 'กำลังดำเนินการ…' : isRegister ? 'สมัครและเข้าสู่ระบบ' : 'เข้าสู่ระบบ'}</button>
+        <button className="button primary large" type="submit" disabled={busy}>
+          {busy ? <LoaderCircle className="spin" size={17} aria-hidden="true" /> : isRegister ? <UserPlus size={17} aria-hidden="true" /> : <LogIn size={17} aria-hidden="true" />}
+          {busy ? 'กำลังดำเนินการ…' : isRegister ? 'สมัครและเข้าสู่ระบบ' : 'เข้าสู่ระบบ'}
+        </button>
       </form>
       <div className="auth-footer">
         {isStaff ? (
