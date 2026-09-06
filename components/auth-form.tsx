@@ -114,52 +114,136 @@ export function AuthForm({ mode, enableDevelopmentLogin = false }: Props) {
   const isStaff = mode === 'staff'
   const isRegister = mode === 'register'
 
-  return <div className={`auth-page ${enableDevelopmentLogin && isStaff ? 'development-auth' : ''}`}>
-    <section className="auth-side-copy">
-      <Image src="/logo-mark.svg" alt="CareLink" width={56} height={56} priority />
-      <h2>{isStaff ? 'ระบบบริหารการไหลเวียนผู้ป่วย' : 'ดูแลทุกขั้นตอนของการเข้ารับบริการ'}</h2>
-      <p>{isStaff ? 'พื้นที่ทำงานสำหรับบุคลากรทางการแพทย์และทีมปฏิบัติการ' : 'ติดตามคิว นัดหมาย และข้อมูลก่อนเข้ารับบริการจากที่เดียว'}</p>
-    </section>
-
-    <section className="auth-card">
-      <div className="brand-row"><Image src="/logo-mark.svg" alt="" width={36} height={36} /><div><strong>CareLink</strong><span>{isStaff ? 'สำหรับเจ้าหน้าที่' : 'สำหรับผู้รับบริการ'}</span></div></div>
+  return (
+    <div className={`auth-card${enableDevelopmentLogin && isStaff ? ' development-login-card' : ''}`}>
+      <div className="brand-row">
+        <Image src="/logo-mark.svg" alt="" width={46} height={46} priority />
+        <div><strong>CareLink</strong><span>ระบบบริหารการรักษาและคิวผู้ป่วย</span></div>
+      </div>
       <div className="auth-heading">
-        <span className="eyebrow">{isRegister ? 'CREATE PATIENT ACCOUNT' : isStaff ? 'STAFF SIGN IN' : 'PATIENT SIGN IN'}</span>
-        <h1>{isRegister ? 'ลงทะเบียนผู้รับบริการ' : 'เข้าสู่ระบบ'}</h1>
-        <p>{isRegister ? 'สร้างบัญชีเพื่อขอนัดและติดตามเส้นทางบริการ' : 'กรอกข้อมูลบัญชีเพื่อเข้าสู่พื้นที่ใช้งานของคุณ'}</p>
+        <span className="eyebrow">{isStaff ? 'ระบบสำหรับบุคลากร' : 'ระบบสำหรับผู้ป่วย'}</span>
+        <h1>{isRegister ? 'สมัครสมาชิกผู้ป่วย' : isStaff ? 'เข้าสู่ระบบเจ้าหน้าที่' : 'เข้าสู่ระบบผู้ป่วย'}</h1>
+        <p>{isStaff ? 'สำหรับพยาบาล แพทย์ และเจ้าหน้าที่ทุกแผนก เพื่อจัดการนัดหมายและคิวการรักษา' : 'ดูนัดหมาย ติดตามคิวสด และเส้นทางการรับบริการได้จากมือถือ'}</p>
       </div>
 
-      {error && <div className="inline-alert danger auth-error">{error}</div>}
+      {error && <div className="inline-alert danger auth-error" role="alert">{error}</div>}
 
-      {enableDevelopmentLogin && isStaff && <div className="development-login">
-        <div className="development-login-heading"><div><span className="development-badge"><KeyRound size={13} /> Development access</span><h2>บัญชีสำหรับทดสอบ</h2><p>เลือกบัญชีเพื่อเข้าสู่ Workspace ของบทบาทนั้นทันที</p></div><div className="development-account-total"><UsersRound size={14} /> {developmentAccounts.length} บัญชี</div></div>
-        <div className="development-account-controls">
-          <label className="development-account-search"><Search size={15} /><input value={accountQuery} onChange={(event) => setAccountQuery(event.target.value)} placeholder="ค้นหาชื่อ ผู้ใช้ หน่วยงาน หรืองานที่รับผิดชอบ" /></label>
-          <select value={accountRole} onChange={(event) => setAccountRole(event.target.value)} aria-label="กรองตามบทบาท"><option value="all">ทุกบทบาท</option>{developmentRoleOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
-          <span className="development-filter-total">พบ {filteredDevelopmentAccounts.length} รายการ</span>
-        </div>
-        <div className="development-account-table-wrap">
-          <table className="development-account-table">
-            <thead><tr><th>บัญชี</th><th>บทบาท</th><th>หน่วยงาน</th><th>หน้าที่</th><th /></tr></thead>
-            <tbody>
-              {developmentAccountsLoading ? <tr><td colSpan={5} className="development-table-message"><LoaderCircle className="spin" size={16} /> กำลังโหลดบัญชี…</td></tr> : filteredDevelopmentAccounts.length === 0 ? <tr><td colSpan={5} className="development-table-message">ไม่พบบัญชีที่ตรงกับตัวกรอง</td></tr> : filteredDevelopmentAccounts.map((account) => <tr key={account.username} className={selectedDevelopmentAccount === account.username ? 'selected' : ''}>
-                <td><strong>{account.display_name}</strong><code>{account.username}</code></td><td><span className="development-role-badge">{account.role_label}</span></td><td>{account.department}<small>{account.station_codes.join(', ') || '—'}</small></td><td>{account.duty}</td><td className="development-login-action"><button type="button" className="button secondary" disabled={busy} onClick={() => void enterAsDevelopmentAccount(account)}>{busy && selectedDevelopmentAccount === account.username ? <><LoaderCircle className="spin" size={14} /> กำลังเข้า…</> : <><LogIn size={14} /> เข้าใช้งาน</>}</button></td>
-              </tr>)}
-            </tbody>
-          </table>
-        </div>
-        <div className="auth-separator">หรือเข้าสู่ระบบด้วยชื่อผู้ใช้และรหัสผ่าน</div>
-      </div>}
+      {enableDevelopmentLogin && isStaff && (
+        <section className="development-login" aria-labelledby="development-login-title">
+          <div className="development-login-heading">
+            <div>
+              <span className="development-badge"><KeyRound size={14} aria-hidden="true" />Public Sandbox</span>
+              <h2 id="development-login-title">ตารางบัญชีผู้ใช้สำหรับทดสอบ</h2>
+              <p>ค้นหาบัญชีหรือกรองตามบทบาท แล้วกดเข้าใช้งานได้ทันทีโดยไม่ต้องกรอกรหัสผ่าน</p>
+              <p><strong>ข้อมูลสังเคราะห์และใช้ร่วมกัน:</strong> ผู้ทดสอบอื่นอาจใช้บัญชีเดียวกัน การกระทำจะถูกแยกด้วย demo session และเก็บ audit</p>
+            </div>
+            <span className="development-account-total"><UsersRound size={16} aria-hidden="true" />{developmentAccounts.length} บัญชี</span>
+          </div>
 
-      <form className="auth-form" onSubmit={submit}>
-        {isRegister && <label><span>ชื่อ-นามสกุล</span><input value={displayName} onChange={(event) => setDisplayName(event.target.value)} required autoComplete="name" /></label>}
-        <label><span>{isStaff ? 'ชื่อผู้ใช้' : 'เบอร์โทรศัพท์'}</span><input value={username} onChange={(event) => setUsername(event.target.value)} required autoComplete="username" /></label>
-        {isRegister && <label><span>วันเกิด</span><input type="date" value={birthDate} onChange={(event) => setBirthDate(event.target.value)} required /></label>}
-        <label><span>รหัสผ่าน</span><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} required minLength={isRegister ? 6 : undefined} autoComplete={isRegister ? 'new-password' : 'current-password'} /></label>
-        <button className="button primary large full" disabled={busy}>{busy ? <><LoaderCircle className="spin" size={17} /> กำลังดำเนินการ…</> : isRegister ? 'สร้างบัญชี' : 'เข้าสู่ระบบ'}</button>
+          <div className="development-account-controls">
+            <label className="development-account-search">
+              <span className="sr-only">ค้นหาบัญชีผู้ใช้</span>
+              <Search size={17} aria-hidden="true" />
+              <input value={accountQuery} onChange={(event) => setAccountQuery(event.target.value)} placeholder="ค้นหาชื่อ ชื่อผู้ใช้ หน่วยงาน หรือหน้าที่" />
+            </label>
+            <label>
+              <span className="sr-only">กรองตามบทบาท</span>
+              <select value={accountRole} onChange={(event) => setAccountRole(event.target.value)} aria-label="กรองบัญชีตามบทบาท">
+                <option value="all">ทุกบทบาท</option>
+                {developmentRoleOptions.map(([role, label]) => <option key={role} value={role}>{label}</option>)}
+              </select>
+            </label>
+            <span className="development-filter-total">พบ {filteredDevelopmentAccounts.length} บัญชี</span>
+          </div>
+
+          <div className="development-account-table-wrap" aria-live="polite">
+            <table className="development-account-table">
+              <thead>
+                <tr>
+                  <th>ชื่อผู้ใช้งาน</th>
+                  <th>ชื่อบัญชี</th>
+                  <th>บทบาทและหน่วยงาน</th>
+                  <th>หน้าที่รับผิดชอบ</th>
+                  <th><span className="sr-only">การดำเนินการ</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {developmentAccountsLoading && (
+                  <tr><td colSpan={5} className="development-table-message"><LoaderCircle className="spin" size={20} aria-hidden="true" />กำลังโหลดบัญชีผู้ใช้…</td></tr>
+                )}
+                {!developmentAccountsLoading && filteredDevelopmentAccounts.map((account) => {
+                  const isSelected = selectedDevelopmentAccount === account.username
+                  return (
+                    <tr key={account.username} className={isSelected ? 'selected' : ''}>
+                      <td data-label="ชื่อผู้ใช้งาน"><strong>{account.display_name}</strong></td>
+                      <td data-label="ชื่อบัญชี"><code className="mono">{account.username}</code></td>
+                      <td data-label="บทบาทและหน่วยงาน"><span className="development-role-badge">{account.role_label}</span><small>{account.department}</small></td>
+                      <td data-label="หน้าที่รับผิดชอบ">{account.duty}</td>
+                      <td className="development-login-action">
+                        <button
+                          className="button secondary"
+                          type="button"
+                          onClick={() => enterAsDevelopmentAccount(account)}
+                          disabled={busy}
+                          aria-label={`เข้าสู่ระบบด้วยบัญชี ${account.username} บทบาท${account.role_label}`}
+                        >
+                          {isSelected ? <LoaderCircle className="spin" size={16} aria-hidden="true" /> : <LogIn size={16} aria-hidden="true" />}
+                          {isSelected ? 'กำลังเข้าสู่ระบบ…' : 'เข้าใช้งาน'}
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
+                {!developmentAccountsLoading && filteredDevelopmentAccounts.length === 0 && (
+                  <tr><td colSpan={5} className="development-table-message">ไม่พบบัญชีที่ตรงกับคำค้นหา</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          <div className="auth-separator"><span>หรือเข้าสู่ระบบด้วยชื่อผู้ใช้และรหัสผ่าน</span></div>
+        </section>
+      )}
+
+      <form onSubmit={submit} className="auth-form">
+        {isRegister && (
+          <label>
+            <span>ชื่อ-นามสกุล</span>
+            <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="เช่น สมชาย ใจดี" autoComplete="name" required />
+          </label>
+        )}
+        {isRegister && (
+          <label>
+            <span>วันเกิด</span>
+            <input type="date" value={birthDate} onChange={(e) => setBirthDate(e.target.value)} required />
+          </label>
+        )}
+        <label>
+          <span>{isStaff ? 'ชื่อผู้ใช้' : 'เบอร์โทรศัพท์'}</span>
+          <input
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder={isStaff ? 'กรอกชื่อผู้ใช้ของคุณ' : '0812345678'}
+            autoComplete={isStaff ? 'username' : 'tel'}
+            inputMode={isStaff ? 'text' : 'tel'}
+            disabled={busy}
+            required
+          />
+        </label>
+        <label>
+          <span>รหัสผ่าน</span>
+          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={isRegister ? 'อย่างน้อย 6 ตัวอักษร' : '••••••••'} autoComplete={isRegister ? 'new-password' : 'current-password'} minLength={isRegister ? 6 : undefined} disabled={busy} required />
+        </label>
+        <button className="button primary large" type="submit" disabled={busy}>{busy ? 'กำลังดำเนินการ…' : isRegister ? 'สมัครและเข้าสู่ระบบ' : 'เข้าสู่ระบบ'}</button>
       </form>
-
-      {!isStaff && <div className="auth-footer">{isRegister ? <><span>มีบัญชีแล้ว?</span><Link href="/login/patient">เข้าสู่ระบบ</Link></> : <><span>ยังไม่มีบัญชี?</span><Link href="/register/patient">ลงทะเบียน</Link></>}</div>}
-    </section>
-  </div>
+      <div className="auth-footer">
+        {isStaff ? (
+          <><span>เป็นผู้ป่วย?</span><Link href="/login/patient">เข้าสู่ระบบผู้ป่วย</Link></>
+        ) : isRegister ? (
+          <><span>มีบัญชีแล้ว?</span><Link href="/login/patient">เข้าสู่ระบบ</Link></>
+        ) : (
+          <><Link href="/register/patient">สร้างบัญชีผู้ป่วย</Link><span>·</span><Link href="/login/nurse">เข้าสู่ระบบบุคลากร</Link></>
+        )}
+      </div>
+    </div>
+  )
 }
