@@ -30,10 +30,12 @@ spec:
       annotations:
         # Increment when changing values in secret.yaml so existing pods pick
         # up the new environment variables during the next Argo CD sync.
-        carelink.dev/secret-revision: public-demo-v1
+        carelink.dev/secret-revision: public-demo-v2-atlas
     spec:
       securityContext:
         runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
         seccompProfile: { type: RuntimeDefault }
       topologySpreadConstraints:
         - maxSkew: 1
@@ -55,6 +57,14 @@ spec:
                 name: carelink-config
             - secretRef:
                 name: carelink-secrets
+          env:
+            - name: MONGO_URI
+              valueFrom:
+                secretKeyRef:
+                  # This secret is intentionally not stored in this public Git
+                  # repository. Create it in the carelink namespace before sync.
+                  name: carelink-atlas
+                  key: MONGO_URI
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
