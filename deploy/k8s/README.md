@@ -1,33 +1,18 @@
 # CareLink Kubernetes deployment
 
-The production-style Kubernetes deployment uses MongoDB Atlas. MongoDB is not run inside this Kubernetes namespace.
+The Kubernetes deployment uses MongoDB Atlas. MongoDB is not run inside the Kubernetes namespace.
 
-## 1. Create the Atlas Secret outside Git
+## MongoDB Atlas
 
-This repository is public, so never commit a live MongoDB password or connection string. The Deployment expects an unmanaged Secret named `carelink-atlas` with the key `MONGO_URI`.
-
-```bash
-kubectl create namespace carelink --dry-run=client -o yaml | kubectl apply -f -
-read -s ATLAS_PASSWORD
-kubectl -n carelink create secret generic carelink-atlas \
-  --from-literal=MONGO_URI="mongodb+srv://txngjr:${ATLAS_PASSWORD}@cluster0.tha54x2.mongodb.net/carelink?retryWrites=true&w=majority" \
-  --dry-run=client -o yaml | kubectl apply -f -
-unset ATLAS_PASSWORD
-```
-
-If the Atlas password contains URI-reserved characters, URL-encode the password before building the connection string.
-
-`atlas-secret.example.yaml` is documentation only and is intentionally not referenced by `kustomization.yaml`.
-
-## 2. Allow the Kubernetes cluster in MongoDB Atlas
-
-In Atlas, add the Kubernetes cluster's stable outbound/NAT public IP to the project's Network Access list. Prefer the specific egress IP rather than opening Atlas to all IPv4 addresses.
+The Atlas connection is deployed automatically by Argo CD from `atlas-secret.yaml` as the Kubernetes Secret `carelink-atlas`. The application reads `MONGO_URI` from that Secret.
 
 The namespace NetworkPolicy allows DNS plus outbound TCP/27017 so the application can resolve the `mongodb+srv` record and connect to Atlas.
 
-## 3. Sync and verify
+Make sure MongoDB Atlas Network Access allows the Kubernetes cluster's outbound/NAT public IP. For a classroom/demo environment, Atlas can also be configured with a broader temporary access rule if required by the environment.
 
-After the Secret exists, sync the Argo CD `carelink` application and verify the rollout:
+## Sync and verify
+
+Sync the Argo CD `carelink` application and verify the rollout:
 
 ```bash
 kubectl -n carelink rollout status deployment/carelink --timeout=180s
@@ -39,4 +24,4 @@ The application container runs as numeric UID/GID `1001:1001`, which satisfies K
 
 ## Existing in-cluster MongoDB data
 
-Removing the StatefulSet from GitOps stops and prunes the in-cluster MongoDB workload. A PVC created by the old StatefulSet can remain after the StatefulSet is removed. Keep that PVC until any data you need has been migrated and verified in Atlas; delete it manually only when you are sure the old data is no longer needed.
+The old in-cluster MongoDB StatefulSet and Service are no longer part of the Kustomization. Argo CD will prune those resources after this version is synced. A PVC created by the old StatefulSet may remain and can be deleted manually if the old demo data is no longer needed.
