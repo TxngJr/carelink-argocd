@@ -6,11 +6,11 @@ describe('ตารางสิทธิ์ CareLink', () => {
   it.each([
     ['registration', 'NPR', true], ['registration', 'VM', false],
     ['vitals_staff', 'VM', true], ['vitals_staff', 'MHT', false],
-    ['nurse', 'MHT', true], ['nurse', 'PC', false],
+    ['nurse', 'MHT', true], ['nurse', 'PC', false], ['nurse', 'XR', false], ['nurse', 'LAB', false],
     ['doctor', 'PC2', true], ['doctor', 'LAB', false],
     ['lab_staff', 'LABC', true], ['lab_staff', 'PD', false],
     ['pharmacy_staff', 'PD', true], ['pharmacy_staff', 'INFUSION', false],
-    ['infusion_staff', 'INFUSION', true], ['patient', 'NPR', false],
+    ['infusion_staff', 'INFUSION', true], ['chemo_staff', 'INFUSION', true], ['patient', 'NPR', false],
   ] as Array<[Role, string, boolean]>)('%s ที่สถานี %s = %s', (role, station, allowed) => {
     expect(stationAllowed(role, station)).toBe(allowed)
   })
@@ -36,6 +36,14 @@ describe('ตารางสิทธิ์ CareLink', () => {
     expect(routeAllowed('doctor', '/physician')).toBe(true)
     expect(routeAllowed('lab_staff', '/lab')).toBe(true)
     expect(routeAllowed('pharmacy_staff', '/pharmacy')).toBe(true)
+  })
+
+  it('legacy aliases ใช้สิทธิ์เดียวกับ workspace ปัจจุบัน', () => {
+    expect(routeAllowed('doctor', '/doctor')).toBe(true)
+    expect(routeAllowed('nurse', '/doctor')).toBe(false)
+    expect(routeAllowed('infusion_staff', '/chemo')).toBe(true)
+    expect(routeAllowed('chemo_staff', '/chemo')).toBe(true)
+    expect(routeAllowed('pharmacy_staff', '/chemo')).toBe(false)
   })
 
   it.each([
@@ -74,5 +82,7 @@ describe('ตารางสิทธิ์ CareLink', () => {
     expect(staffRealtimeChannelAllowed('admin', 'tv')).toBe(false)
     expect(staffRealtimeChannelAllowed('lab_staff', 'station:LAB')).toBe(true)
     expect(staffRealtimeChannelAllowed('lab_staff', 'station:PD')).toBe(false)
+    expect(staffRealtimeChannelAllowed('nurse', 'station:XR')).toBe(false)
+    expect(staffRealtimeChannelAllowed('chemo_staff', 'orders')).toBe(true)
   })
 })
