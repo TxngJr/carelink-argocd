@@ -9,9 +9,18 @@ export type LiveFlowEdge = {
 
 export function nextStationForPatient(row: ActivePatientFlow) {
   const currentIndex = row.route.findIndex((step) => step.station_code === row.current_station && step.status !== 'completed' && step.status !== 'skipped')
-  const fallbackIndex = row.route.findIndex((step) => step.status !== 'completed' && step.status !== 'skipped')
-  const index = currentIndex >= 0 ? currentIndex : fallbackIndex
-  if (index < 0) return ''
+  if (currentIndex >= 0) {
+    return row.route.slice(currentIndex + 1).find((step) => step.status !== 'completed' && step.status !== 'skipped')?.station_code || ''
+  }
+
+  // During a station handoff the encounter can briefly keep the previous
+  // current_station while the first unfinished route step already points to
+  // the destination. Treat that first unfinished step as the next station.
+  const firstUnfinished = row.route.find((step) => step.status !== 'completed' && step.status !== 'skipped')
+  if (!firstUnfinished) return ''
+  if (firstUnfinished.station_code !== row.current_station) return firstUnfinished.station_code
+
+  const index = row.route.indexOf(firstUnfinished)
   return row.route.slice(index + 1).find((step) => step.status !== 'completed' && step.status !== 'skipped')?.station_code || ''
 }
 
