@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { OPERATIONS_MUTATION_ROLES, routeAllowed, staffRealtimeChannelAllowed, stationAllowed } from '@/lib/access-control'
+import { OPERATIONS_MUTATION_ROLES, roleHomePath, routeAllowed, staffRealtimeChannelAllowed, stationAllowed } from '@/lib/access-control'
 import type { Role } from '@/lib/types'
 
 describe('ตารางสิทธิ์ CareLink', () => {
@@ -20,6 +20,38 @@ describe('ตารางสิทธิ์ CareLink', () => {
     expect(routeAllowed('doctor', '/operations')).toBe(true)
     expect(routeAllowed('doctor', '/operations/insights')).toBe(false)
     expect(routeAllowed('operations', '/operations/insights')).toBe(true)
+  })
+
+  it('ให้ doctor และ physician ใช้สิทธิ์แผนผังเดียวกัน', () => {
+    expect(routeAllowed('doctor', '/map')).toBe(true)
+    expect(routeAllowed('physician', '/map')).toBe(true)
+  })
+
+  it.each([
+    ['admin', '/operations'],
+    ['manager', '/operations'],
+    ['operations', '/operations'],
+    ['nurse', '/intake'],
+    ['doctor', '/physician'],
+    ['physician', '/physician'],
+    ['registration', '/registration'],
+    ['vitals_staff', '/vitals'],
+    ['lab_staff', '/lab'],
+    ['pharmacy_staff', '/pharmacy'],
+    ['infusion_staff', '/infusion'],
+    ['chemo_staff', '/infusion'],
+    ['patient', '/patient'],
+  ] as Array<[Role, string]>)('หน้าหลักของ %s คือ %s และเข้าถึงได้', (role, expected) => {
+    expect(roleHomePath(role)).toBe(expected)
+    expect(routeAllowed(role, expected)).toBe(true)
+  })
+
+  it('role เฉพาะทางไม่ถูกส่งไปหน้าฝ่ายปฏิบัติการ', () => {
+    expect(routeAllowed('registration', '/operations')).toBe(false)
+    expect(routeAllowed('vitals_staff', '/operations')).toBe(false)
+    expect(routeAllowed('lab_staff', '/operations')).toBe(false)
+    expect(routeAllowed('pharmacy_staff', '/operations')).toBe(false)
+    expect(routeAllowed('infusion_staff', '/operations')).toBe(false)
   })
 
   it('จำกัด mutation ฝ่ายปฏิบัติการไว้สามบทบาท', () => {
