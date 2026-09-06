@@ -40,6 +40,17 @@ describe('live flow map helpers', () => {
     expect(nextStationForPatient(row)).toBe('PD')
   })
 
+  it('รองรับช่วง handoff ที่ current_station ยังเป็นจุดเดิมแต่ route เลื่อนไปจุดใหม่แล้ว', () => {
+    const row = patient('1', 'VM', [
+      { station_code: 'NPR', status: 'completed' },
+      { station_code: 'EV', status: 'completed' },
+      { station_code: 'VM', status: 'completed' },
+      { station_code: 'MHT', status: 'pending' },
+      { station_code: 'PC', status: 'pending' },
+    ])
+    expect(nextStationForPatient(row)).toBe('MHT')
+  })
+
   it('รวมเส้นทางเดียวกันเป็นจำนวนผู้ป่วยบนสายเดียว', () => {
     const rows = [
       patient('1', 'VM', [{ station_code: 'VM', status: 'in_progress' }, { station_code: 'MHT', status: 'pending' }]),
