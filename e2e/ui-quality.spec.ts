@@ -39,7 +39,7 @@ for (const viewport of [
 
 test('password toggle แสดงและซ่อนรหัสผ่านได้โดยไม่ล้างค่าที่กรอก', async ({ page }) => {
   await page.goto('/login/patient')
-  const password = page.getByLabel('รหัสผ่าน')
+  const password = page.getByRole('textbox', { name: 'รหัสผ่าน' })
   await password.fill('demo1234')
   await expect(password).toHaveAttribute('type', 'password')
   await page.getByRole('button', { name: 'แสดงรหัสผ่าน' }).click()
