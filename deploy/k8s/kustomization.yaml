@@ -5,6 +5,7 @@ resources:
   - namespace.yaml
   - configmap.yaml
   - secret.yaml
+  - atlas-secret.yaml
   - app.yaml
   - operations.yaml
 labels:
