@@ -14,7 +14,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: carelink-verify-${{ github.ref }}
+  # Keep the historical group name so this verify-only workflow cancels any
+  # older auto-release run that may still be running for the same ref.
+  group: carelink-release-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
