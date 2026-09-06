@@ -4,8 +4,9 @@ import React, { useEffect, useMemo, useState } from 'react'
 import {
   Droplets,
   FlaskConical,
+  Pill,
   Plus,
-  Scan,
+  Route,
   Trash2,
   X,
 } from 'lucide-react'
@@ -14,6 +15,32 @@ import { QueueWorkspace } from '@/components/queue-workspace'
 import { buildDoctorRoute, OPTIONAL_ROUTE_CODES, stationMap } from '@/lib/stations'
 import { clientApi } from '@/lib/client'
 import type { Encounter, InfusionTemplate, OrderItem } from '@/lib/types'
+
+const SUPPORTED_ORDER_TYPES = ['medication', 'lab', 'infusion'] as const
+type SupportedOrderType = (typeof SUPPORTED_ORDER_TYPES)[number]
+
+function addStationForOrder(route: string[], station: 'LAB' | 'INFUSION' | 'PD') {
+  if (station === 'LAB' && (route.includes('LAB') || route.includes('LABC'))) return route
+  if (route.includes(station)) return route
+  if (station === 'PD') return [...route, 'PD']
+  const withoutPd = route.filter((code) => code !== 'PD')
+  return [...withoutPd, station, ...(route.includes('PD') ? ['PD'] : [])]
+}
+
+function orderRouteProblem(orders: OrderItem[], route: string[]) {
+  const hasLabOrder = orders.some((order) => order.type === 'lab')
+  const hasMedicationOrder = orders.some((order) => order.type === 'medication')
+  const hasInfusionOrder = orders.some((order) => order.type === 'infusion')
+  const hasLabRoute = route.includes('LAB') || route.includes('LABC')
+
+  if (hasLabOrder && !hasLabRoute) return 'มีคำสั่งตรวจแล็บ แต่เส้นทางไม่มี LAB/LABC'
+  if (!hasLabOrder && hasLabRoute) return 'เส้นทางมี LAB/LABC แต่ยังไม่มีคำสั่งตรวจแล็บ'
+  if (hasMedicationOrder && !route.includes('PD')) return 'มีคำสั่งยา แต่เส้นทางไม่มีห้องยา PD'
+  if (!hasMedicationOrder && route.includes('PD')) return 'เส้นทางมีห้องยา PD แต่ยังไม่มีคำสั่งยา'
+  if (hasInfusionOrder && !route.includes('INFUSION')) return 'มีคำสั่ง Infusion แต่เส้นทางไม่มี INFUSION'
+  if (!hasInfusionOrder && route.includes('INFUSION')) return 'เส้นทางมี INFUSION แต่ยังไม่มีคำสั่ง Infusion'
+  return ''
+}
 
 export default function PhysicianPage() {
   const [encounterId, setEncounterId] = useState('')
@@ -24,9 +51,8 @@ export default function PhysicianPage() {
   const [plan, setPlan] = useState('')
   const [icd10, setIcd10] = useState('C50.9')
 
-  // Orders
   const [orders, setOrders] = useState<OrderItem[]>([])
-  const [orderType, setOrderType] = useState<OrderItem['type']>('medication')
+  const [orderType, setOrderType] = useState<SupportedOrderType>('medication')
   const [orderName, setOrderName] = useState('')
   const [orderDose, setOrderDose] = useState('')
   const [orderFreq, setOrderFreq] = useState('1x1 หลังอาหาร')
@@ -36,11 +62,9 @@ export default function PhysicianPage() {
   const [infusionPlannedFor, setInfusionPlannedFor] = useState('')
   const [infusionDuration, setInfusionDuration] = useState('')
 
-  // Route Builder
   const routeOptions = useMemo(() => Array.from(OPTIONAL_ROUTE_CODES), [])
-  const [selectedRoute, setSelectedRoute] = useState<string[]>(['LAB', 'PD'])
-  const [candidateStation, setCandidateStation] = useState('LAB')
-  const [terminal, setTerminal] = useState<'DH' | 'IPW'>('DH')
+  const [selectedRoute, setSelectedRoute] = useState<string[]>([])
+  const [candidateStation, setCandidateStation] = useState(routeOptions[0] || 'LAB')
 
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
@@ -57,9 +81,18 @@ export default function PhysicianPage() {
   function addOrder() {
     const template = infusionTemplates.find((item) => item.id === infusionTemplateId)
     const resolvedName = orderType === 'infusion' ? template?.name : orderName.trim()
-    if (!resolvedName || (orderType === 'infusion' && !template)) return
+    if (!resolvedName || (orderType === 'infusion' && !template)) {
+      setMessage(orderType === 'infusion' ? 'กรุณาเลือกรูปแบบบริการ Infusion' : 'กรุณากรอกชื่อรายการก่อนเพิ่มคำสั่ง')
+      return
+    }
+    if (!Number.isInteger(orderQty) || orderQty < 1) {
+      setMessage('จำนวนต้องเป็นเลขจำนวนเต็มตั้งแต่ 1 ขึ้นไป')
+      return
+    }
+
+    const targetStation = orderType === 'lab' ? 'LAB' : orderType === 'medication' ? 'PD' : 'INFUSION'
     const newItem: OrderItem = {
-      id: Date.now().toString(),
+      id: `${Date.now()}-${orders.length + 1}`,
       type: orderType,
       code: orderType === 'infusion' ? template!.code : resolvedName.toUpperCase().slice(0, 8),
       name: resolvedName,
@@ -67,24 +100,32 @@ export default function PhysicianPage() {
       frequency: orderFreq,
       quantity: Number(orderQty),
       status: 'ordered',
+      target_station: targetStation,
       ...(orderType === 'infusion' ? {
-        target_station: 'INFUSION',
         service_template_id: template!.id,
         ...(infusionPlannedFor ? { planned_for: new Date(infusionPlannedFor).toISOString() } : {}),
         ...(Number(infusionDuration) > 0 ? { duration_override_min: Number(infusionDuration) } : {}),
       } : {}),
     }
+
     setOrders((prev) => [...prev, newItem])
-    if (orderType === 'infusion') {
-      setSelectedRoute((prev) => prev.includes('INFUSION') ? prev : [...prev.filter((code) => code !== 'PD'), 'INFUSION', ...(prev.includes('PD') ? ['PD'] : [])])
-    }
+    setSelectedRoute((prev) => addStationForOrder(prev, targetStation))
     setOrderName('')
     setOrderDose('')
     setInfusionDuration('')
+    setMessage('')
   }
 
   function removeOrder(id: string) {
-    setOrders((prev) => prev.filter((o) => o.id !== id))
+    const remaining = orders.filter((order) => order.id !== id)
+    setOrders(remaining)
+    setSelectedRoute((route) => {
+      let next = [...route]
+      if (!remaining.some((order) => order.type === 'lab')) next = next.filter((code) => code !== 'LAB' && code !== 'LABC')
+      if (!remaining.some((order) => order.type === 'medication')) next = next.filter((code) => code !== 'PD')
+      if (!remaining.some((order) => order.type === 'infusion')) next = next.filter((code) => code !== 'INFUSION')
+      return next
+    })
   }
 
   function addRouteStation() {
@@ -94,19 +135,33 @@ export default function PhysicianPage() {
   }
 
   function removeRouteStation(code: string) {
-    setSelectedRoute((prev) => prev.filter((c) => c !== code))
+    setSelectedRoute((prev) => prev.filter((item) => item !== code))
   }
 
-  async function handleSaveConsultation(e: React.FormEvent) {
-    e.preventDefault()
+  async function handleSaveConsultation(event: React.FormEvent) {
+    event.preventDefault()
     if (!encounterId) {
       setMessage('กรุณาเลือกผู้ป่วยจากคิวห้องตรวจด้านล่าง')
       return
     }
+
+    const routeProblem = orderRouteProblem(orders, selectedRoute)
+    if (routeProblem) {
+      setMessage(routeProblem)
+      return
+    }
+
+    let fullRoute: string[]
+    try {
+      fullRoute = buildDoctorRoute(selectedRoute, 'DH')
+    } catch (cause) {
+      setMessage(cause instanceof Error ? cause.message : 'เส้นทางหลังตรวจไม่ถูกต้อง')
+      return
+    }
+
     setBusy(true)
     setMessage('')
     try {
-      // 1. Save SOAP Note
       await clientApi.saveConsultation(encounterId, {
         subjective,
         objective,
@@ -115,15 +170,11 @@ export default function PhysicianPage() {
         icd10_codes: [{ code: icd10, name: getIcd10Name(icd10), is_primary: true }],
       })
 
-      // 2. Save Orders if any
       if (orders.length > 0) {
         await clientApi.createOrders(encounterId, { items: orders })
       }
 
-      // 3. Set Doctor Route
-      const fullRoute = buildDoctorRoute(selectedRoute, terminal)
       await clientApi.setDoctorRoute(encounterId, fullRoute)
-
       setMessage('บันทึกผลการตรวจ สั่งการรักษา และกำหนดเส้นทางสำเร็จ')
     } catch (cause) {
       setMessage(cause instanceof Error ? cause.message : 'บันทึกไม่สำเร็จ')
@@ -144,10 +195,18 @@ export default function PhysicianPage() {
   }
 
   async function selectEncounter(id: string) {
-    setEncounterId(id)
-    setEncounter(await clientApi.getEncounterDetail(id))
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+    try {
+      setMessage('')
+      const detail = await clientApi.getEncounterDetail(id)
+      setEncounterId(id)
+      setEncounter(detail)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    } catch (cause) {
+      setMessage(cause instanceof Error ? cause.message : 'โหลดข้อมูลผู้ป่วยไม่สำเร็จ')
+    }
   }
+
+  const routeProblem = orderRouteProblem(orders, selectedRoute)
 
   return (
     <StaffShell role="doctor" displayName="นพ. วรเมธ สถิตย์ธรรม (อายุรกรรมมะเร็ง)">
@@ -156,12 +215,11 @@ export default function PhysicianPage() {
           <div>
             <span className="eyebrow">PHYSICIAN CONSULTATION WORKSPACE</span>
             <h2>ห้องตรวจแพทย์ (PC1–PC4)</h2>
-            <p>บันทึก SOAP, วินิจฉัยโรค, สั่งตรวจ/สั่งยา/Infusion และกำหนดเส้นทางบริการหลังตรวจ</p>
+            <p>บันทึก SOAP, วินิจฉัยโรค, สั่งแล็บ/ยา/Infusion และกำหนดเส้นทางที่มีจุดบริการรองรับจริง</p>
           </div>
         </div>
 
         <div className="clinical-grid">
-          {/* Main Consultation Workspace */}
           <form className="workspace-card" onSubmit={handleSaveConsultation} style={{ display: 'grid', gap: 16, padding: 22 }}>
             <div className="workspace-card-head" style={{ padding: 0 }}>
               <h3>บันทึกการตรวจและวินิจฉัย (Clinical Consultation Note)</h3>
@@ -202,28 +260,28 @@ export default function PhysicianPage() {
               <textarea rows={2} value={plan} onChange={(e) => setPlan(e.target.value)} placeholder="แผนการให้ยา การตรวจติดตาม หรือนัดหมายครั้งถัดไป" />
             </label>
 
-            {/* Order Entry Section */}
             <div style={{ borderTop: '1px solid var(--line)', paddingTop: 14 }}>
               <span className="eyebrow">ORDER ENTRY</span>
-              <h4 style={{ margin: '4px 0 10px' }}>สั่งตรวจ / สั่งยา / ส่งรักษาต่อ</h4>
+              <h4 style={{ margin: '4px 0 10px' }}>สั่งแล็บ / สั่งยา / Infusion</h4>
+              <p style={{ marginTop: 0, fontSize: '.82rem', color: 'var(--muted)' }}>เมื่อเพิ่มคำสั่ง ระบบจะเพิ่ม Station ที่เกี่ยวข้องในเส้นทางให้อัตโนมัติ</p>
 
               <div className="order-entry-grid">
-                <select aria-label="ประเภทคำสั่งการรักษา" value={orderType} onChange={(e) => setOrderType(e.target.value as OrderItem['type'])}>
-                  <option value="medication">ยา (Medication)</option>
-                  <option value="lab">ตรวจแล็บ (Lab)</option>
-                  <option value="imaging">รังสี/เอกซเรย์ (Imaging)</option>
-                  <option value="infusion">สารน้ำ / ยาทางหลอดเลือด / เคมีบำบัด</option>
+                <select aria-label="ประเภทคำสั่งการรักษา" value={orderType} onChange={(e) => setOrderType(e.target.value as SupportedOrderType)}>
+                  <option value="medication">ยา (Medication) → PD</option>
+                  <option value="lab">ตรวจแล็บ (Lab) → LAB</option>
+                  <option value="infusion">สารน้ำ / ยาทางหลอดเลือด / เคมีบำบัด → INFUSION</option>
                 </select>
                 {orderType === 'infusion' ? (
                   <select aria-label="รูปแบบบริการ Infusion" value={infusionTemplateId} onChange={(e) => setInfusionTemplateId(e.target.value)}>
+                    {infusionTemplates.length === 0 && <option value="">ยังไม่มี Template ที่พร้อมใช้งาน</option>}
                     {infusionTemplates.map((template) => (
                       <option key={template.id} value={template.id}>{template.name}{template.is_demo ? ' · ตัวอย่าง' : ''}</option>
                     ))}
                   </select>
                 ) : (
-                  <input aria-label="ชื่อรายการ" value={orderName} onChange={(e) => setOrderName(e.target.value)} placeholder="ชื่อยา / รายการตรวจ เช่น Paracetamol 500mg, CBC" />
+                  <input aria-label="ชื่อรายการ" value={orderName} onChange={(e) => setOrderName(e.target.value)} placeholder="เช่น Paracetamol 500mg หรือ CBC" />
                 )}
-                <input aria-label="จำนวน" type="number" min="1" value={orderQty} onChange={(e) => setOrderQty(Number(e.target.value))} placeholder="จำนวน" />
+                <input aria-label="จำนวน" type="number" min="1" step="1" value={orderQty} onChange={(e) => setOrderQty(Number(e.target.value))} placeholder="จำนวน" />
                 <button type="button" className="button secondary" onClick={addOrder}><Plus size={16} aria-hidden="true" /> เพิ่ม</button>
               </div>
 
@@ -235,7 +293,7 @@ export default function PhysicianPage() {
                   </label>
                   <label>
                     <span>เวลารวมเฉพาะราย (นาที) · ไม่บังคับ</span>
-                    <input type="number" min="1" max="1440" value={infusionDuration} onChange={(e) => setInfusionDuration(e.target.value)} placeholder="ใช้เวลาจากเก้าอี้หรือ Template" />
+                    <input type="number" min="1" max="1440" value={infusionDuration} onChange={(e) => setInfusionDuration(e.target.value)} placeholder="ใช้เวลาจาก Template หากไม่ระบุ" />
                   </label>
                 </div>
               )}
@@ -248,85 +306,62 @@ export default function PhysicianPage() {
 
               {orders.length > 0 && (
                 <div style={{ marginTop: 10, display: 'grid', gap: 6 }}>
-                  {orders.map((ord) => (
-                    <div key={ord.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: '#f8faf9', borderRadius: 8, fontSize: '.82rem' }}>
-                      <div>
-                        <strong>[{ord.type}] {ord.name}</strong> (จำนวน: {ord.quantity})
-                      </div>
-                      <button type="button" aria-label={`ลบคำสั่ง ${ord.name}`} onClick={() => removeOrder(ord.id)} style={{ border: 0, background: 'transparent', color: 'var(--danger)' }}>
-                        <Trash2 size={15} aria-hidden="true" />
-                      </button>
+                  {orders.map((order) => (
+                    <div key={order.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: '#f8faf9', borderRadius: 8, fontSize: '.82rem' }}>
+                      <div><strong>[{order.type}] {order.name}</strong> (จำนวน: {order.quantity}) · ไป {order.target_station}</div>
+                      <button type="button" aria-label={`ลบคำสั่ง ${order.name}`} onClick={() => removeOrder(order.id)} style={{ border: 0, background: 'transparent', color: 'var(--danger)' }}><Trash2 size={15} aria-hidden="true" /></button>
                     </div>
                   ))}
                 </div>
               )}
             </div>
 
-            {/* Route Builder Section */}
             <div style={{ borderTop: '1px solid var(--line)', paddingTop: 14 }}>
               <span className="eyebrow">POST-CONSULT ROUTE</span>
-              <h4 style={{ margin: '4px 0 8px' }}>กำหนดเส้นทางสถานีบริการหลังออกจากห้องแพทย์</h4>
-              <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+              <h4 style={{ margin: '4px 0 8px' }}>เส้นทางหลังออกจากห้องแพทย์</h4>
+              <p style={{ marginTop: 0, fontSize: '.82rem', color: 'var(--muted)' }}>รุ่นสาธิตเปิดใช้งานเฉพาะ Station ที่มีเจ้าหน้าที่รับงานครบวงจร และ Visit จะจบที่ DH · กลับบ้าน</p>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
                 <select value={candidateStation} onChange={(e) => setCandidateStation(e.target.value)} style={{ maxWidth: 300 }}>
-                  {routeOptions.map((code) => (
-                    <option key={code} value={code}>{code} · {stationMap.get(code)?.name}</option>
-                  ))}
+                  {routeOptions.map((code) => <option key={code} value={code}>{code} · {stationMap.get(code)?.name}</option>)}
                 </select>
                 <button type="button" className="button secondary" onClick={addRouteStation}>เพิ่ม Station</button>
+                <button type="button" className="button ghost" onClick={() => setSelectedRoute([])}>ล้าง Station เพิ่มเติม</button>
               </div>
 
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+                {selectedRoute.length === 0 && <span className="status-pill">ไม่มี Station เพิ่มเติม → DH</span>}
                 {selectedRoute.map((code, index) => (
                   <span key={code} className="status-pill flowing" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px' }}>
                     {index + 1}. {code} ({stationMap.get(code)?.name})
                     <button type="button" aria-label={`นำ ${code} ออกจากเส้นทาง`} onClick={() => removeRouteStation(code)} style={{ border: 0, background: 'transparent', color: 'inherit', padding: 0 }}><X size={12} aria-hidden="true" /></button>
                   </span>
                 ))}
+                <span className="status-pill">→ DH · กลับบ้าน</span>
               </div>
-
-              <label style={{ maxWidth: 300 }}>
-                <span>ปลายทางของ Visit</span>
-                <select value={terminal} onChange={(e) => setTerminal(e.target.value as 'DH' | 'IPW')}>
-                  <option value="DH">DH · กลับบ้าน (Discharge Home)</option>
-                  <option value="IPW">HA → IPW · รับไว้รักษา (Admit Inpatient)</option>
-                </select>
-              </label>
+              {routeProblem && <div className="inline-alert warning" role="status">{routeProblem}</div>}
             </div>
 
-            {message && (
-              <div className={`inline-alert ${message.includes('สำเร็จ') ? 'success' : 'danger'}`}>
-                {message}
-              </div>
-            )}
+            {message && <div className={`inline-alert ${message.includes('สำเร็จ') ? 'success' : 'danger'}`}>{message}</div>}
 
-            <button className="button primary large" disabled={busy}>
+            <button className="button primary large" disabled={busy || Boolean(routeProblem)}>
               {busy ? 'กำลังบันทึก…' : 'บันทึกประวัติการตรวจและยืนยันเส้นทาง'}
             </button>
           </form>
 
-          {/* Quick Doctor Tools */}
           <div style={{ display: 'grid', gap: 14 }}>
             <div className="workspace-card" style={{ padding: 20 }}>
-              <h3 style={{ marginTop: 0 }}>เส้นทางใช้งานบ่อย</h3>
-              <p style={{ fontSize: '.82rem', color: 'var(--muted)' }}>
-                เลือก Preset เส้นทางด่วนสำหรับการรักษายอดนิยม:
-              </p>
-              <div style={{ display: 'grid', gap: 8 }}>
-                <button type="button" className="button secondary" style={{ justifyContent: 'flex-start' }} onClick={() => setSelectedRoute(['LAB', 'PD'])}>
-                  <FlaskConical size={17} aria-hidden="true" /> ตรวจแล็บ + รับยา (LAB → PD → DH)
-                </button>
-                <button type="button" className="button secondary" style={{ justifyContent: 'flex-start' }} onClick={() => setSelectedRoute(['INFUSION', 'PD'])}>
-                  <Droplets size={17} aria-hidden="true" /> Infusion Lounge + รับยากลับบ้าน (INFUSION → PD → DH)
-                </button>
-                <button type="button" className="button secondary" style={{ justifyContent: 'flex-start' }} onClick={() => setSelectedRoute(['XR', 'RC', 'PD'])}>
-                  <Scan size={17} aria-hidden="true" /> เอกซเรย์ + พบแพทย์ฟังผล + รับยา (XR → RC → PD → DH)
-                </button>
+              <h3 style={{ marginTop: 0 }}>การส่งต่อที่ระบบรองรับ</h3>
+              <p style={{ fontSize: '.82rem', color: 'var(--muted)' }}>คำสั่งและ Station จะต้องตรงกัน เพื่อไม่ให้ผู้ป่วยค้างระหว่างทาง</p>
+              <div style={{ display: 'grid', gap: 10 }}>
+                <div className="inline-alert"><FlaskConical size={17} aria-hidden="true" /> <strong>Lab order</strong> → LAB/LABC</div>
+                <div className="inline-alert"><Droplets size={17} aria-hidden="true" /> <strong>Infusion order</strong> → INFUSION</div>
+                <div className="inline-alert"><Pill size={17} aria-hidden="true" /> <strong>Medication order</strong> → PD</div>
+                <div className="inline-alert"><Route size={17} aria-hidden="true" /> ไม่มีคำสั่งเพิ่มเติม → DH</div>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Doctor Queue Workspace */}
         <QueueWorkspace role="doctor" stationCodes={['PC', 'PC2', 'PC3', 'PC4']} onSelectEncounter={(id) => void selectEncounter(id)} />
       </div>
     </StaffShell>
