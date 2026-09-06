@@ -27,6 +27,17 @@ describe('ตารางสิทธิ์ CareLink', () => {
     expect(routeAllowed('physician', '/map')).toBe(true)
   })
 
+  it('จำกัด clinical workstation ที่มี action ให้ role ที่ API อนุญาตจริง', () => {
+    expect(routeAllowed('manager', '/physician')).toBe(false)
+    expect(routeAllowed('manager', '/lab')).toBe(false)
+    expect(routeAllowed('doctor', '/lab')).toBe(false)
+    expect(routeAllowed('physician', '/lab')).toBe(false)
+    expect(routeAllowed('manager', '/pharmacy')).toBe(false)
+    expect(routeAllowed('doctor', '/physician')).toBe(true)
+    expect(routeAllowed('lab_staff', '/lab')).toBe(true)
+    expect(routeAllowed('pharmacy_staff', '/pharmacy')).toBe(true)
+  })
+
   it.each([
     ['admin', '/operations'],
     ['manager', '/operations'],
