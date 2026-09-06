@@ -8,12 +8,10 @@ import { DomainError } from '@/lib/server/domain'
 import type { Role } from '@/lib/types'
 import {
   asPublic,
-  completeImaging,
   findPatientDuplicates,
   getAdminOverview,
   getClinicalContext,
   getHistoricalInsights,
-  getImagingQueue,
   getMethodology,
   getPharmacySafety,
   getExtendedPrevisit,
@@ -23,7 +21,6 @@ import {
   saveExtendedPrevisit,
   saveExtendedAssessment,
   savePharmacyReview,
-  startImaging,
   updateEligibility,
 } from '@/lib/server/extended'
 
@@ -89,8 +86,6 @@ const eligibilitySchema = z.object({
   referral_status: z.enum(['not_required', 'pending', 'valid', 'missing']).default('not_required'),
   note: z.string().trim().max(1000).default(''),
 })
-const imagingStartSchema = z.object({ version: z.number().int().min(1), station_code: z.enum(['XR', 'CT', 'MRI', 'IR']) })
-const imagingCompleteSchema = imagingStartSchema.extend({ findings: z.string().trim().min(3).max(6000), impression: z.string().trim().min(3).max(3000) })
 const pharmacyReviewSchema = z.object({ decision: z.enum(['approved', 'override', 'rejected']), note: z.string().trim().max(2000).default('') })
 
 async function auditMutation(request: NextRequest, session: NonNullable<Session>, action: string) {
@@ -117,49 +112,39 @@ async function handler(request: NextRequest, context: Context) {
       await auditMutation(request, session, path)
     }
 
+    // Registration owns patient identity, duplicate checks and eligibility.
     if (method === 'GET' && path === 'registration/duplicates') {
-      await auth(request, ['admin', 'manager', 'registration', 'nurse'])
+      await auth(request, ['registration'])
       return ok(await findPatientDuplicates(request.nextUrl.searchParams.get('q') || '', request.nextUrl.searchParams.get('birth_date') || ''))
     }
     if (method === 'POST' && path === 'registration/patients') {
-      await auth(request, ['admin', 'manager', 'registration', 'nurse'])
+      await auth(request, ['registration'])
       return ok(await registerRichPatient(patientSchema.parse(await json(request))), 'สร้างเวชระเบียนและข้อมูลสิทธิเริ่มต้นแล้ว', 201)
     }
     if (method === 'PATCH' && segments[0] === 'registration' && segments[1] === 'patients' && segments[3] === 'eligibility') {
-      const session = await auth(request, ['admin', 'manager', 'registration', 'nurse'])
+      const session = await auth(request, ['registration'])
       return ok(await updateEligibility(id(segments, 2), eligibilitySchema.parse(await json(request)), session.userId), 'บันทึกผลตรวจสอบสิทธิแล้ว')
     }
 
+    // Nurse owns MHT clinical intake. Other clinical roles read their context from their own APIs.
     if (method === 'GET' && segments[0] === 'clinical' && segments[1] === 'context') {
-      await auth(request, ['admin', 'manager', 'operations', 'nurse', 'doctor', 'physician', 'registration', 'vitals_staff', 'lab_staff', 'pharmacy_staff', 'infusion_staff'])
+      await auth(request, ['nurse'])
       return ok(await getClinicalContext(id(segments, 2)))
     }
     if (method === 'PUT' && segments[0] === 'clinical' && segments[1] === 'assessment') {
-      const session = await auth(request, ['admin', 'manager', 'nurse'])
+      const session = await auth(request, ['nurse'])
       return ok(await saveExtendedAssessment(id(segments, 2), await json(request), session.userId), 'บันทึกข้อมูลซักประวัติเพิ่มเติมแล้ว')
     }
 
-    if (method === 'GET' && path === 'imaging/queue') {
-      await auth(request, ['admin', 'manager', 'operations', 'nurse', 'doctor', 'physician'])
-      return ok(await getImagingQueue(request.nextUrl.searchParams.get('station') || 'all'))
-    }
-    if (method === 'POST' && segments[0] === 'imaging' && segments[2] === 'start') {
-      const session = await auth(request, ['admin', 'manager', 'operations', 'nurse'])
-      const input = imagingStartSchema.parse(await json(request))
-      return ok(await startImaging(id(segments, 1), input.version, input.station_code, session.userId), 'เริ่มตรวจ Imaging แล้ว')
-    }
-    if (method === 'POST' && segments[0] === 'imaging' && segments[2] === 'complete') {
-      const session = await auth(request, ['admin', 'manager', 'operations', 'nurse'])
-      const input = imagingCompleteSchema.parse(await json(request))
-      return ok(await completeImaging(id(segments, 1), input.version, input, session.userId), 'บันทึกผล Imaging แล้ว')
-    }
+    // Imaging has no operational workspace in this build, so no imaging mutation API is exposed.
 
+    // Pharmacy safety review belongs to pharmacy staff only.
     if (method === 'GET' && segments[0] === 'pharmacy' && segments[2] === 'safety') {
-      await auth(request, ['admin', 'manager', 'pharmacy_staff'])
+      await auth(request, ['pharmacy_staff'])
       return ok(await getPharmacySafety(id(segments, 1)))
     }
     if (method === 'POST' && segments[0] === 'pharmacy' && segments[2] === 'review') {
-      const session = await auth(request, ['admin', 'manager', 'pharmacy_staff'])
+      const session = await auth(request, ['pharmacy_staff'])
       return ok(await savePharmacyReview(id(segments, 1), pharmacyReviewSchema.parse(await json(request)), session.userId), 'บันทึก Pharmacy safety review แล้ว')
     }
 
@@ -187,12 +172,13 @@ async function handler(request: NextRequest, context: Context) {
       return ok(await saveExtendedPrevisit(session.userId, await json(request)), 'บันทึกข้อมูล Pre-visit เพิ่มเติมแล้ว')
     }
 
+    // Analytics belong to the operational-management roles.
     if (method === 'GET' && path === 'analytics/historical') {
-      await auth(request, ['admin', 'manager', 'operations', 'doctor', 'physician', 'nurse'])
+      await auth(request, ['manager', 'operations'])
       return ok(await getHistoricalInsights())
     }
     if (method === 'GET' && path === 'analytics/methodology') {
-      await auth(request, ['admin', 'manager', 'operations', 'doctor', 'physician', 'nurse'])
+      await auth(request, ['manager', 'operations'])
       return ok(await getMethodology())
     }
 
