@@ -13,4 +13,4 @@ labels:
 images:
   - name: carelink-app
     newName: ghcr.io/txngjr/carelink-argocd-web
-    newTag: sha-e06fda3
+    newTag: sha-22cf9ed
