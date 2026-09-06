@@ -21,6 +21,24 @@ export const STAFF_ROUTE_ACCESS: Array<{ prefix: string; roles: Role[] }> = [
   { prefix: '/infusion', roles: ['admin', 'manager', 'infusion_staff', 'chemo_staff'] },
 ]
 
+/**
+ * หน้าหลักที่ปลอดภัยสำหรับแต่ละบทบาทหลังเข้าสู่ระบบหรือเมื่อถูก redirect
+ * จากหน้าที่ไม่มีสิทธิ์ ใช้ร่วมกับ Navbar และ proxy เพื่อไม่ให้ role เฉพาะทาง
+ * ถูกส่งไป /operations โดยอัตโนมัติ
+ */
+export function roleHomePath(role: Role) {
+  if (role === 'patient') return '/patient'
+  if (role === 'admin' || role === 'manager' || role === 'operations') return '/operations'
+  if (role === 'doctor' || role === 'physician') return '/physician'
+  if (role === 'nurse') return '/intake'
+  if (role === 'registration') return '/registration'
+  if (role === 'vitals_staff') return '/vitals'
+  if (role === 'lab_staff') return '/lab'
+  if (role === 'pharmacy_staff') return '/pharmacy'
+  if (role === 'infusion_staff' || role === 'chemo_staff') return '/infusion'
+  return '/'
+}
+
 export function stationAllowed(role: Role, stationCode: string) {
   if (role === 'admin' || role === 'manager' || role === 'operations') return true
   if (role === 'doctor' || role === 'physician') return ['PC', 'PC2', 'PC3', 'PC4'].includes(stationCode)
