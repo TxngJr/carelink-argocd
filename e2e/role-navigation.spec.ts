@@ -118,6 +118,29 @@ test('doctor ใช้หน้า confirm appointment ใต้ physician works
   await expect.poll(() => new URL(page.url()).pathname).toBe('/physician')
 })
 
+test('API RBAC กันการเรียก endpoint ข้ามบทบาท', async ({ page }) => {
+  await page.context().clearCookies()
+  await developmentLogin(page, 'doctor')
+  let response = await page.request.get('/api/nurse/appointment-requests')
+  expect(response.status()).toBe(403)
+
+  await page.context().clearCookies()
+  await developmentLogin(page, 'nurse')
+  response = await page.request.get('/api/doctor/appointment-requests')
+  expect(response.status()).toBe(403)
+  response = await page.request.post('/api/registration/patients', { data: {} })
+  expect(response.status()).toBe(403)
+
+  await page.context().clearCookies()
+  await developmentLogin(page, 'manager')
+  response = await page.request.get('/api/registration/patients?q=')
+  expect(response.ok()).toBe(true)
+  response = await page.request.post('/api/registration/patients', { data: {} })
+  expect(response.status()).toBe(403)
+  response = await page.request.post('/api/stations/MHT/call-next', { data: {} })
+  expect(response.status()).toBe(403)
+})
+
 test('legacy aliases ใช้ guard เดียวกับ workspace ปัจจุบัน', async ({ page }) => {
   await developmentLogin(page, 'nurse')
   await page.goto('/nurse')
