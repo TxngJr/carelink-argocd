@@ -92,9 +92,11 @@ export async function listDevelopmentAccounts(db: Db) {
 }
 
 export async function findDevelopmentAccount(db: Db, username: string) {
+  const normalizedUsername = username.trim()
+  if (!DEVELOPMENT_ACCOUNT_USERNAMES.includes(normalizedUsername)) return null
+
   return db.collection('users').findOne({
-    username: username.trim(),
-    username: { $in: DEVELOPMENT_ACCOUNT_USERNAMES },
+    username: normalizedUsername,
     is_development_account: true,
     is_active: { $ne: false },
     role: { $ne: 'patient' },
