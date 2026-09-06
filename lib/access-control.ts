@@ -64,7 +64,13 @@ export function routeAllowed(role: Role, pathname: string) {
 export function staffRealtimeChannelAllowed(role: Role, channel: string) {
   if (channel.startsWith('patient:') || channel === 'tv') return false
   if (role === 'admin') return true
-  if (channel.startsWith('station:')) return stationAllowed(role, channel.slice('station:'.length))
+
+  if (channel.startsWith('station:')) {
+    // Operations/Manager may observe all station events for the live flow map,
+    // but stationAllowed() still prevents them from operating clinical queues.
+    if (role === 'manager' || role === 'operations') return true
+    return stationAllowed(role, channel.slice('station:'.length))
+  }
 
   if (role === 'manager' || role === 'operations') {
     return ['operations', 'encounters', 'staff'].includes(channel)
