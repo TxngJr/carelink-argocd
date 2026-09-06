@@ -29,7 +29,16 @@ export function staffApiAllowed(role: Role, method: string, segments: string[]) 
 
   if (root === 'nurse' || root === 'intake') return role === 'nurse'
   if (root === 'doctor' || root === 'physician') return role === 'doctor' || role === 'physician'
-  if (root === 'registration') return role === 'registration'
+
+  if (root === 'registration') {
+    // Operations/Manager may search the patient directory from /operations/patients,
+    // but only Registration may mutate registration/eligibility data.
+    if (verb === 'GET' && segments[1] === 'patients') {
+      return ['registration', 'manager', 'operations'].includes(role)
+    }
+    return role === 'registration'
+  }
+
   if (root === 'vitals') return role === 'vitals_staff'
   if (root === 'lab') return role === 'lab_staff'
   if (root === 'pharmacy') return role === 'pharmacy_staff'
