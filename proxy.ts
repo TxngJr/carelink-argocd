@@ -28,6 +28,7 @@ export const config = {
     '/appointments/:path*',
     '/registration/:path*',
     '/vitals/:path*',
+    '/nurse/:path*',
     '/intake/:path*',
     '/doctor/:path*',
     '/physician/:path*',
