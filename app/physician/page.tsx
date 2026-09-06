@@ -53,7 +53,7 @@ export default function PhysicianPage() {
   const [icd10, setIcd10] = useState('C50.9')
 
   const [orders, setOrders] = useState<OrderItem[]>([])
-  const [orderType, setOrderType] = useState<SupportedOrderType>('medication')
+  const [orderType, setOrderType] = useState<SupportedOrderType>(SUPPORTED_ORDER_TYPES[0])
   const [orderName, setOrderName] = useState('')
   const [orderDose, setOrderDose] = useState('')
   const [orderFreq, setOrderFreq] = useState('1x1 หลังอาหาร')
@@ -87,7 +87,7 @@ export default function PhysicianPage() {
     setPlan('')
     setIcd10('C50.9')
     setOrders([])
-    setOrderType('medication')
+    setOrderType(SUPPORTED_ORDER_TYPES[0])
     setOrderName('')
     setOrderDose('')
     setOrderFreq('1x1 หลังอาหาร')
