@@ -96,6 +96,7 @@ for (const roleCase of CASES) {
     }
 
     if (roleCase.username !== 'admin') {
+      await expect(navigation.locator(`a[href="${roleCase.forbidden}"]`), `${roleCase.username} ต้องไม่เห็น ${roleCase.forbidden}`).toHaveCount(0)
       await page.goto(roleCase.forbidden)
       await expect.poll(() => new URL(page.url()).pathname).toBe(roleCase.home)
       expect(new URL(page.url()).searchParams.get('ไม่อนุญาต')).toBe('1')
@@ -108,6 +109,10 @@ test('doctor ใช้หน้า confirm appointment ใต้ physician works
   await page.goto('/physician/appointments')
   await expect.poll(() => new URL(page.url()).pathname).toBe('/physician/appointments')
   await expect(page.getByRole('heading', { name: 'ยืนยันนัดผู้ป่วย' })).toBeVisible()
+  const navigation = page.getByRole('navigation', { name: 'เมนูหลัก' })
+  await expect(navigation.locator('a[href="/appointments"]')).toHaveCount(0)
+  await expect(navigation.locator('a[href="/physician/appointments"]')).toHaveClass(/active/)
+  await expect(navigation.locator('a[href="/physician"]')).not.toHaveClass(/active/)
 
   await page.goto('/appointments')
   await expect.poll(() => new URL(page.url()).pathname).toBe('/physician')
