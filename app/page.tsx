@@ -1,14 +1,58 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import {
+  ArrowRight,
+  BadgeCheck,
   Heart,
   Monitor,
+  ShieldCheck,
   Stethoscope,
   Tv,
+  Wifi,
+  Workflow,
 } from 'lucide-react'
 import { roleHomePath } from '@/lib/access-control'
 import { pageSession } from '@/lib/server/auth'
 import { redirect } from 'next/navigation'
+
+const portals = [
+  {
+    href: '/login/nurse',
+    className: 'portal-card staff',
+    icon: Stethoscope,
+    iconStyle: { background: 'var(--brand)' },
+    audience: 'สำหรับบุคลากรการแพทย์',
+    title: 'เข้าสู่ระบบเจ้าหน้าที่',
+    description: 'เลือกบัญชีทดสอบตามบทบาท แล้วจัดการนัดหมาย คิว และจุดบริการได้ทันที',
+  },
+  {
+    href: '/login/patient',
+    className: 'portal-card patient',
+    icon: Heart,
+    iconStyle: { background: 'var(--brand2)' },
+    audience: 'สำหรับผู้รับบริการ',
+    title: 'เข้าสู่ระบบผู้ป่วย',
+    description: 'ติดตามคิวสด กรอกข้อมูลก่อนมา รับการแจ้งเตือน และดูเส้นทางการรับบริการ',
+  },
+  {
+    href: '/tv',
+    className: 'portal-card',
+    icon: Tv,
+    iconStyle: { background: '#0b1e1b' },
+    audience: 'จอแสดงผลห้องพักคอย',
+    title: 'จอแสดงผลและเรียกคิว',
+    description: 'แสดงคิวที่กำลังเรียกและกำลังให้บริการแบบ realtime สำหรับพื้นที่รอ',
+  },
+  {
+    href: '/kiosk',
+    className: 'portal-card',
+    icon: Monitor,
+    iconStyle: { background: 'var(--info)' },
+    audience: 'ตู้บริการตนเองหน้าแผนก',
+    title: 'ตรวจสอบคิวด้วยตนเอง',
+    description: 'ค้นหาสถานะด้วย HN หรือเบอร์โทรร่วมกับวันเกิด โดยไม่เปิดเผยรายการผู้ป่วยทั้งหมด',
+  },
+] as const
 
 export default async function HomePage() {
   const session = await pageSession()
@@ -28,92 +72,47 @@ export default async function HomePage() {
         </div>
 
         <div className="landing-copy">
-          <span className="eyebrow">แพลตฟอร์มบริหารเส้นทางการรักษาแบบครบวงจร</span>
-          <h1>หนึ่งระบบรวมทุกขั้นตอนการรักษาและการไหลเวียน</h1>
+          <span className="eyebrow">CARE JOURNEY & PATIENT FLOW</span>
+          <h1>หนึ่งระบบสำหรับทุกขั้นตอนของการรับบริการ</h1>
           <p>
-            รวมศูนย์ปฏิบัติการ พื้นที่ทำงานของทีมคลินิก ศูนย์ให้สารน้ำ พอร์ทัลผู้ป่วยบนมือถือ จอแสดงผลคิว และตู้บริการตนเองไว้ในระบบเดียว
+            เชื่อมงานนัดหมาย เช็กอิน ลงทะเบียน สัญญาณชีพ คัดกรอง ห้องแพทย์ แล็บ ห้องยา Infusion และการติดตามคิวของผู้ป่วยไว้ใน workflow เดียว
           </p>
-          <div className="inline-alert warning" role="note"><strong>Public Sandbox:</strong> ข้อมูลทั้งหมดเป็นข้อมูลสังเคราะห์ ผู้ทดสอบใช้บัญชีและข้อมูลร่วมกัน และข้อมูลสาธิตจะคงอยู่จนกว่าผู้ดูแลระบบจะรีเซ็ต</div>
+          <div className="landing-feature-row" aria-label="จุดเด่นของระบบ">
+            <span className="landing-feature-chip"><Workflow size={14} aria-hidden="true" />Workflow ต่อเนื่อง</span>
+            <span className="landing-feature-chip"><Wifi size={14} aria-hidden="true" />อัปเดตแบบ realtime</span>
+            <span className="landing-feature-chip"><ShieldCheck size={14} aria-hidden="true" />แยกสิทธิ์ตามบทบาท</span>
+            <span className="landing-feature-chip"><BadgeCheck size={14} aria-hidden="true" />ข้อมูลสังเคราะห์สำหรับทดสอบ</span>
+          </div>
+          <div className="inline-alert warning feedback-row" role="note">
+            <ShieldCheck size={18} aria-hidden="true" />
+            <div><strong>Public Sandbox</strong><br />ข้อมูลในระบบเป็นข้อมูลสังเคราะห์และใช้ร่วมกันระหว่างผู้ทดสอบ ไม่ใช่ข้อมูลผู้ป่วยจริง</div>
+          </div>
         </div>
 
         <div className="portal-grid">
-          {/* Staff Login */}
-          <Link className="portal-card staff" href="/login/nurse">
-            <span className="portal-icon" style={{ background: 'var(--brand)' }}>
-              <Stethoscope size={24} />
-            </span>
-            <div>
-              <small>สำหรับบุคลากรการแพทย์</small>
-              <strong>เข้าสู่ระบบเจ้าหน้าที่</strong>
-              <p>ศูนย์ปฏิบัติการ พยาบาล แพทย์ ห้องปฏิบัติการ ห้องยา และศูนย์ให้สารน้ำ</p>
-            </div>
-            <b>→</b>
-          </Link>
-
-          {/* Patient Portal */}
-          <Link className="portal-card patient" href="/login/patient">
-            <span className="portal-icon" style={{ background: 'var(--brand2)' }}>
-              <Heart size={24} />
-            </span>
-            <div>
-              <small>สำหรับผู้รับบริการ</small>
-              <strong>เข้าสู่ระบบผู้ป่วย</strong>
-              <p>ติดตามคิวสด กรอกข้อมูลก่อนมา ใช้ระบบตอบกลับตามกฎจำลอง และจัดการนัดหมาย</p>
-            </div>
-            <b>→</b>
-          </Link>
-
-          {/* Public TV Queue Screen */}
-          <Link className="portal-card" href="/tv">
-            <span className="portal-icon" style={{ background: '#0b1e1b' }}>
-              <Tv size={24} />
-            </span>
-            <div>
-              <small>จอแสดงผลห้องพักคอย</small>
-              <strong>จอแสดงผลและเรียกคิว</strong>
-              <p>จอเรียกคิวขนาดใหญ่พร้อมเสียงกระดิ่งและเสียงอ่านภาษาไทย</p>
-            </div>
-            <b>→</b>
-          </Link>
-
-          {/* Self-Service Kiosk */}
-          <Link className="portal-card" href="/kiosk">
-            <span className="portal-icon" style={{ background: 'var(--info)' }}>
-              <Monitor size={24} />
-            </span>
-            <div>
-              <small>ตู้บริการตนเองหน้าแผนก</small>
-              <strong>ตู้บริการตนเองสำหรับผู้ป่วย</strong>
-              <p>ตรวจสอบสถานะคิวด้วย HN/เบอร์โทรและวันเกิดที่ตรงกันทุกตัวอักษร</p>
-            </div>
-            <b>→</b>
-          </Link>
+          {portals.map(({ href, className, icon: Icon, iconStyle, audience, title, description }) => (
+            <Link className={className} href={href} key={href}>
+              <span className="portal-icon" style={iconStyle}><Icon size={24} aria-hidden="true" /></span>
+              <div>
+                <small>{audience}</small>
+                <strong>{title}</strong>
+                <p>{description}</p>
+              </div>
+              <span className="portal-arrow"><ArrowRight size={18} aria-hidden="true" /></span>
+            </Link>
+          ))}
         </div>
 
-        {/* Quick Links Section */}
-        <div style={{ marginTop: 32, paddingTop: 24, borderTop: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 14 }}>
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: '.85rem' }}>
-            <Link href="/operations" style={{ color: 'var(--brand)', fontWeight: 600 }}>ศูนย์ปฏิบัติการ</Link>
-            <span>·</span>
-            <Link href="/map" style={{ color: 'var(--brand)', fontWeight: 600 }}>แผนที่ 4 ชั้น</Link>
-            <span>·</span>
-            <Link href="/registration" style={{ color: 'var(--brand)', fontWeight: 600 }}>จุดลงทะเบียน</Link>
-            <span>·</span>
-            <Link href="/vitals" style={{ color: 'var(--brand)', fontWeight: 600 }}>วัดสัญญาณชีพ</Link>
-            <span>·</span>
-            <Link href="/intake" style={{ color: 'var(--brand)', fontWeight: 600 }}>ซักประวัติ</Link>
-            <span>·</span>
-            <Link href="/physician" style={{ color: 'var(--brand)', fontWeight: 600 }}>ห้องตรวจแพทย์</Link>
-            <span>·</span>
-            <Link href="/lab" style={{ color: 'var(--brand)', fontWeight: 600 }}>ห้องปฏิบัติการ</Link>
-            <span>·</span>
-            <Link href="/pharmacy" style={{ color: 'var(--brand)', fontWeight: 600 }}>ห้องยา</Link>
-            <span>·</span>
-            <Link href="/infusion" style={{ color: 'var(--brand)', fontWeight: 600 }}>ศูนย์ให้สารน้ำและยาทางหลอดเลือด</Link>
+        <div className="public-demo-footer">
+          <div>
+            <strong style={{ display: 'block', fontSize: '.82rem' }}>เริ่มทดสอบระบบ</strong>
+            <span style={{ color: 'var(--muted)', fontSize: '.74rem' }}>เจ้าหน้าที่สามารถเลือกบัญชี sandbox ตามบทบาทได้จากหน้าเข้าสู่ระบบ</span>
           </div>
-
-          <div style={{ fontSize: '.75rem', color: 'var(--muted)' }}>
-            ระบบสาธิตสาธารณะ: เลือกบัญชีทดสอบเพื่อเข้าใช้งานได้ทันที
+          <div className="public-demo-footer-links">
+            <Link href="/login/nurse"><Stethoscope size={14} aria-hidden="true" />บัญชีเจ้าหน้าที่</Link>
+            <Link href="/login/patient"><Heart size={14} aria-hidden="true" />พอร์ทัลผู้ป่วย</Link>
+            <Link href="/tv"><Tv size={14} aria-hidden="true" />จอคิว</Link>
+            <Link href="/kiosk"><Monitor size={14} aria-hidden="true" />Kiosk</Link>
           </div>
         </div>
       </section>
