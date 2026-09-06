@@ -6,8 +6,8 @@ import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
 import {
   Activity, BarChart3, CalendarCheck, CalendarDays, ChevronLeft, ClipboardCheck, Droplets, FlaskConical,
-  LayoutDashboard, LoaderCircle, LogOut, MapPin, Menu, Monitor, PanelLeftClose, PanelLeftOpen, Pill,
-  Stethoscope, Tv, Users, Wifi, WifiOff, X,
+  LayoutDashboard, LoaderCircle, LogOut, MapPin, Menu, PanelLeftClose, PanelLeftOpen, Pill,
+  Stethoscope, Users, Wifi, WifiOff, X,
 } from 'lucide-react'
 import { clientApi } from '@/lib/client'
 import { roleHomePath, routeAllowed } from '@/lib/access-control'
@@ -17,6 +17,11 @@ type NavItem = { href: string; label: string; icon: typeof Activity }
 type NavSection = { section: string; items: NavItem[] }
 type ConnectionState = 'connecting' | 'connected' | 'disconnected'
 
+/**
+ * Navigation contains staff workspaces only. Public TV/Kiosk routes stay public,
+ * but are intentionally not shown inside a staff role's working menu.
+ * Visibility is derived from routeAllowed(), keeping proxy + navbar on one RBAC source.
+ */
 const NAV_ITEMS: NavSection[] = [
   {
     section: 'บริหารการให้บริการ',
@@ -32,20 +37,14 @@ const NAV_ITEMS: NavSection[] = [
     section: 'งานบริการทางคลินิก',
     items: [
       { href: '/appointments', label: 'นัดหมายและเช็กอิน', icon: CalendarCheck },
+      { href: '/physician/appointments', label: 'ยืนยันนัดผู้ป่วย', icon: CalendarCheck },
       { href: '/registration', label: 'ลงทะเบียนและตรวจสิทธิ', icon: ClipboardCheck },
       { href: '/vitals', label: 'วัดสัญญาณชีพ', icon: Activity },
       { href: '/intake', label: 'ซักประวัติและคัดกรอง', icon: ClipboardCheck },
       { href: '/physician', label: 'ห้องตรวจแพทย์', icon: Stethoscope },
       { href: '/lab', label: 'ห้องปฏิบัติการ', icon: FlaskConical },
       { href: '/pharmacy', label: 'ห้องยา', icon: Pill },
-      { href: '/infusion', label: 'Chemotherapy / Infusion', icon: Droplets },
-    ],
-  },
-  {
-    section: 'จอสำหรับผู้รับบริการ',
-    items: [
-      { href: '/tv', label: 'จอเรียกคิว', icon: Tv },
-      { href: '/kiosk', label: 'ตู้บริการตนเอง', icon: Monitor },
+      { href: '/infusion', label: 'Infusion', icon: Droplets },
     ],
   },
 ]
@@ -79,7 +78,7 @@ export function StaffShell({
     es.onopen = () => setConnection('connected')
     es.onerror = () => setConnection('disconnected')
     es.onmessage = () => setLiveEvents((value) => value + 1)
-    for (const eventName of ['queue_updated', 'queue_called', 'encounter_moved', 'session_updated', 'chair_released', 'safety_review_updated']) {
+    for (const eventName of ['appointment_created', 'appointment_proposed', 'appointment_confirmed', 'queue_updated', 'queue_called', 'encounter_moved', 'session_updated', 'chair_released', 'safety_review_updated']) {
       es.addEventListener(eventName, () => setLiveEvents((value) => value + 1))
     }
     return () => es.close()
