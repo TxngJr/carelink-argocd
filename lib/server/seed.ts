@@ -6,8 +6,10 @@ import { STATIONS } from '@/lib/stations'
 import { ensureInfusionDefaults } from '@/lib/server/migrations'
 import { DEVELOPMENT_ACCOUNTS } from '@/lib/development-accounts'
 
-export async function runDatabaseSeed(force = false, providedDb?: Db) {
-  const db = providedDb || await getDb()
+export async function runDatabaseSeed(force = false, providedDb?: unknown) {
+  // getDb() returns the application's narrowed CareLinkDb wrapper. It is backed
+  // by the same MongoDB Db object, so normalize it to Db once for seed helpers.
+  const db = (providedDb || await getDb()) as Db
 
   const existingUsers = await db.collection('users').countDocuments()
   if (existingUsers > 0 && !force) {
@@ -113,7 +115,7 @@ export async function runDatabaseSeed(force = false, providedDb?: Db) {
   }
 
   // 4. Seed configurable infusion resources. Legacy chemo/radiation collections are never deleted.
-  await ensureInfusionDefaults(db as unknown as Db)
+  await ensureInfusionDefaults(db)
 
   // 5. Seed Flow Engine Recommendations
   await db.collection('recommendations').deleteMany({})
