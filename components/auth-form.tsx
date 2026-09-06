@@ -12,7 +12,9 @@ import {
   UsersRound,
 } from 'lucide-react'
 import { clientApi } from '@/lib/client'
+import { roleHomePath } from '@/lib/access-control'
 import type { DevelopmentAccount } from '@/lib/development-accounts'
+import type { Role } from '@/lib/types'
 
 type Props = {
   mode: 'staff' | 'patient' | 'register'
@@ -65,16 +67,8 @@ export function AuthForm({ mode, enableDevelopmentLogin = false }: Props) {
     })
   }, [accountQuery, accountRole, developmentAccounts])
 
-  function openWorkspace(role: string) {
-    if (role === 'admin' || role === 'manager') router.replace('/operations')
-    else if (role === 'doctor' || role === 'physician') router.replace('/physician')
-    else if (role === 'nurse') router.replace('/intake')
-    else if (role === 'registration') router.replace('/registration')
-    else if (role === 'vitals_staff') router.replace('/vitals')
-    else if (role === 'lab_staff') router.replace('/lab')
-    else if (role === 'pharmacy_staff') router.replace('/pharmacy')
-    else if (role === 'infusion_staff' || role === 'chemo_staff') router.replace('/infusion')
-    else router.replace('/operations')
+  function openWorkspace(role: Role) {
+    router.replace(roleHomePath(role))
   }
 
   async function enterAsDevelopmentAccount(account: DevelopmentAccount) {

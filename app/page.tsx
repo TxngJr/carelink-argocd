@@ -6,20 +6,13 @@ import {
   Stethoscope,
   Tv,
 } from 'lucide-react'
+import { roleHomePath } from '@/lib/access-control'
 import { pageSession } from '@/lib/server/auth'
 import { redirect } from 'next/navigation'
 
 export default async function HomePage() {
   const session = await pageSession()
-  if (session?.role === 'admin' || session?.role === 'manager') redirect('/operations')
-  if (session?.role === 'nurse') redirect('/intake')
-  if (session?.role === 'doctor' || session?.role === 'physician') redirect('/physician')
-  if (session?.role === 'registration') redirect('/registration')
-  if (session?.role === 'vitals_staff') redirect('/vitals')
-  if (session?.role === 'lab_staff') redirect('/lab')
-  if (session?.role === 'pharmacy_staff') redirect('/pharmacy')
-  if (session?.role === 'infusion_staff' || session?.role === 'chemo_staff') redirect('/infusion')
-  if (session?.role === 'patient') redirect('/patient')
+  if (session) redirect(roleHomePath(session.role))
 
   return (
     <main className="landing-page">

@@ -6,53 +6,48 @@ import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
 import {
   Activity, BarChart3, CalendarCheck, CalendarDays, ChevronLeft, ClipboardCheck, Droplets, FlaskConical,
-  GitCompareArrows, History, LayoutDashboard, LogOut, MapPin, Menu, Monitor, PanelLeftClose, PanelLeftOpen, Pill,
-  ScanLine, Settings2, Stethoscope, Tv, Users, X,
+  LayoutDashboard, LogOut, MapPin, Menu, Monitor, PanelLeftClose, PanelLeftOpen, Pill,
+  Stethoscope, Tv, Users, X,
 } from 'lucide-react'
 import { clientApi } from '@/lib/client'
+import { roleHomePath, routeAllowed } from '@/lib/access-control'
 import type { PublicUser, Role } from '@/lib/types'
 
-type NavItem = { href: string; label: string; icon: typeof Activity; roles: Array<Role | '*'> }
+type NavItem = { href: string; label: string; icon: typeof Activity }
 type NavSection = { section: string; items: NavItem[] }
 
+// แสดงเฉพาะ route ที่มีหน้าจอจริงใน app/ เท่านั้น
+// สิทธิ์ของแต่ละ role ใช้ routeAllowed() จาก access-control เป็น source of truth เดียว
+// เพื่อป้องกัน Navbar กับ route guard ให้สิทธิ์ไม่ตรงกัน
 const NAV_ITEMS: NavSection[] = [
   {
     section: 'บริหารการให้บริการ',
     items: [
-      { href: '/operations', label: 'ภาพรวมการให้บริการ', icon: LayoutDashboard, roles: ['admin', 'manager', 'operations', 'doctor', 'physician', 'nurse'] },
-      { href: '/operations/schedule', label: 'ตารางเวลา', icon: CalendarDays, roles: ['admin', 'manager', 'operations', 'doctor', 'physician', 'nurse'] },
-      { href: '/operations/patients', label: 'ผู้ป่วยในระบบ', icon: Users, roles: ['admin', 'manager', 'operations', 'doctor', 'physician', 'nurse'] },
-      { href: '/operations/insights', label: 'สถิติจากระบบจริง', icon: BarChart3, roles: ['admin', 'manager', 'operations'] },
-      { href: '/operations/historical', label: 'Historical benchmark', icon: History, roles: ['admin', 'manager', 'operations'] },
-      { href: '/operations/methodology', label: 'DynaFlow methodology', icon: GitCompareArrows, roles: ['admin', 'manager', 'operations', 'doctor', 'physician', 'nurse'] },
-      { href: '/map', label: 'แผนผังจุดบริการ', icon: MapPin, roles: ['admin', 'manager', 'operations', 'doctor', 'nurse'] },
+      { href: '/operations', label: 'ภาพรวมการให้บริการ', icon: LayoutDashboard },
+      { href: '/operations/schedule', label: 'ตารางเวลา', icon: CalendarDays },
+      { href: '/operations/patients', label: 'ผู้ป่วยในระบบ', icon: Users },
+      { href: '/operations/insights', label: 'สถิติจากระบบจริง', icon: BarChart3 },
+      { href: '/map', label: 'แผนผังจุดบริการ', icon: MapPin },
     ],
   },
   {
     section: 'งานบริการทางคลินิก',
     items: [
-      { href: '/appointments', label: 'นัดหมายและเช็กอิน', icon: CalendarCheck, roles: ['admin', 'manager', 'nurse', 'doctor', 'physician'] },
-      { href: '/registration', label: 'ลงทะเบียนและตรวจสิทธิ', icon: ClipboardCheck, roles: ['admin', 'manager', 'nurse', 'registration'] },
-      { href: '/vitals', label: 'วัดสัญญาณชีพ', icon: Activity, roles: ['admin', 'manager', 'nurse', 'vitals_staff'] },
-      { href: '/intake', label: 'ซักประวัติและคัดกรอง', icon: ClipboardCheck, roles: ['admin', 'manager', 'nurse'] },
-      { href: '/physician', label: 'ห้องตรวจแพทย์', icon: Stethoscope, roles: ['admin', 'manager', 'doctor', 'physician'] },
-      { href: '/lab', label: 'ห้องปฏิบัติการ', icon: FlaskConical, roles: ['admin', 'manager', 'doctor', 'physician', 'lab_staff'] },
-      { href: '/imaging', label: 'รังสีวินิจฉัย / Imaging', icon: ScanLine, roles: ['admin', 'manager', 'operations', 'doctor', 'physician', 'nurse'] },
-      { href: '/pharmacy', label: 'ห้องยา', icon: Pill, roles: ['admin', 'manager', 'pharmacy_staff'] },
-      { href: '/infusion', label: 'Chemotherapy / Infusion', icon: Droplets, roles: ['admin', 'manager', 'infusion_staff', 'chemo_staff'] },
-    ],
-  },
-  {
-    section: 'ระบบและการสาธิต',
-    items: [
-      { href: '/admin', label: 'Admin / Audit / Reset', icon: Settings2, roles: ['admin'] },
+      { href: '/appointments', label: 'นัดหมายและเช็กอิน', icon: CalendarCheck },
+      { href: '/registration', label: 'ลงทะเบียนและตรวจสิทธิ', icon: ClipboardCheck },
+      { href: '/vitals', label: 'วัดสัญญาณชีพ', icon: Activity },
+      { href: '/intake', label: 'ซักประวัติและคัดกรอง', icon: ClipboardCheck },
+      { href: '/physician', label: 'ห้องตรวจแพทย์', icon: Stethoscope },
+      { href: '/lab', label: 'ห้องปฏิบัติการ', icon: FlaskConical },
+      { href: '/pharmacy', label: 'ห้องยา', icon: Pill },
+      { href: '/infusion', label: 'Chemotherapy / Infusion', icon: Droplets },
     ],
   },
   {
     section: 'จอสำหรับผู้รับบริการ',
     items: [
-      { href: '/tv', label: 'จอเรียกคิว', icon: Tv, roles: ['*'] },
-      { href: '/kiosk', label: 'ตู้บริการตนเอง', icon: Monitor, roles: ['*'] },
+      { href: '/tv', label: 'จอเรียกคิว', icon: Tv },
+      { href: '/kiosk', label: 'ตู้บริการตนเอง', icon: Monitor },
     ],
   },
 ]
@@ -91,9 +86,10 @@ export function StaffShell({
 
   const currentRole = user?.role || role
   const currentName = user?.display_name || displayName
+  const homeHref = roleHomePath(currentRole)
   const sections = useMemo(() => NAV_ITEMS.map((section) => ({
     ...section,
-    items: section.items.filter((item) => item.roles.includes('*') || item.roles.includes(currentRole)),
+    items: section.items.filter((item) => routeAllowed(currentRole, item.href)),
   })).filter((section) => section.items.length > 0), [currentRole])
 
   async function logout() {
@@ -107,7 +103,7 @@ export function StaffShell({
       {mobileOpen && <button className="sidebar-scrim" aria-label="ปิดเมนู" onClick={() => setMobileOpen(false)} />}
       <aside className="staff-sidebar">
         <div className="sidebar-brand-row">
-          <Link href="/operations" className="sidebar-brand">
+          <Link href={homeHref} className="sidebar-brand" title="กลับหน้าหลักของบทบาทนี้">
             <Image src="/logo-mark.svg" alt="CareLink" width={36} height={36} priority />
             <div><strong>CareLink</strong><span>การไหลเวียนผู้ป่วย</span></div>
           </Link>
