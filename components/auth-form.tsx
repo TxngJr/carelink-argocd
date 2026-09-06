@@ -118,6 +118,7 @@ export function AuthForm({ mode, enableDevelopmentLogin = false }: Props) {
 
   const isStaff = mode === 'staff'
   const isRegister = mode === 'register'
+  const passwordId = `${mode}-password`
 
   return (
     <div className={`auth-card${enableDevelopmentLogin && isStaff ? ' development-login-card' : ''}`}>
@@ -138,7 +139,7 @@ export function AuthForm({ mode, enableDevelopmentLogin = false }: Props) {
           <div className="development-login-heading">
             <div>
               <span className="development-badge"><KeyRound size={14} aria-hidden="true" />Public Sandbox</span>
-              <h2 id="development-login-title">บัญชีผู้ใช้สำหรับทดสอบตามบทบาท</h2>
+              <h2 id="development-login-title">ตารางบัญชีผู้ใช้สำหรับทดสอบ</h2>
               <p>ค้นหาบัญชีหรือกรองตามบทบาท แล้วกดเข้าใช้งานได้ทันทีโดยไม่ต้องกรอกรหัสผ่าน</p>
               <p><strong>ข้อมูลสังเคราะห์และใช้ร่วมกัน:</strong> ผู้ทดสอบอื่นอาจใช้บัญชีเดียวกัน การกระทำจะถูกแยกด้วย demo session และเก็บ audit</p>
             </div>
@@ -235,15 +236,15 @@ export function AuthForm({ mode, enableDevelopmentLogin = false }: Props) {
             required
           />
         </label>
-        <label>
-          <span>รหัสผ่าน</span>
+        <div className="auth-field">
+          <label htmlFor={passwordId}><span>รหัสผ่าน</span></label>
           <div className="password-field">
-            <input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder={isRegister ? 'อย่างน้อย 6 ตัวอักษร' : '••••••••'} autoComplete={isRegister ? 'new-password' : 'current-password'} minLength={isRegister ? 6 : undefined} disabled={busy} required />
+            <input id={passwordId} type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder={isRegister ? 'อย่างน้อย 6 ตัวอักษร' : '••••••••'} autoComplete={isRegister ? 'new-password' : 'current-password'} minLength={isRegister ? 6 : undefined} disabled={busy} required />
             <button type="button" className="password-toggle" onClick={() => setShowPassword((value) => !value)} disabled={busy} aria-label={showPassword ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน'} title={showPassword ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน'}>
               {showPassword ? <EyeOff size={17} aria-hidden="true" /> : <Eye size={17} aria-hidden="true" />}
             </button>
           </div>
-        </label>
+        </div>
         <button className="button primary large" type="submit" disabled={busy}>
           {busy ? <LoaderCircle className="spin" size={17} aria-hidden="true" /> : isRegister ? <UserPlus size={17} aria-hidden="true" /> : <LogIn size={17} aria-hidden="true" />}
           {busy ? 'กำลังดำเนินการ…' : isRegister ? 'สมัครและเข้าสู่ระบบ' : 'เข้าสู่ระบบ'}
