@@ -27,13 +27,6 @@ export function QueueWorkspace({ role, stationCodes, onSelectEncounter }: Props)
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
 
-  useEffect(() => {
-    if (!allowed.some((item) => item.code === station)) {
-      setStation(allowed[0]?.code || '')
-      setData(EMPTY_QUEUE)
-    }
-  }, [allowed, station])
-
   const load = useCallback(async (quiet = false) => {
     if (!station) {
       setData(EMPTY_QUEUE)
