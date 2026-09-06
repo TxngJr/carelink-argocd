@@ -23,11 +23,20 @@ export default function RegistrationPage() {
 
   useEffect(() => {
     const q = form.national_id_masked?.trim() || form.phone.trim() || form.display_name.trim()
-    if (q.length < 2) { setDuplicates([]); return }
+    let cancelled = false
     const timer = window.setTimeout(() => {
-      extendedClient.findPatientDuplicates(q, form.birth_date).then(setDuplicates).catch(() => setDuplicates([]))
-    }, 250)
-    return () => window.clearTimeout(timer)
+      if (q.length < 2) {
+        setDuplicates([])
+        return
+      }
+      void extendedClient.findPatientDuplicates(q, form.birth_date)
+        .then((rows) => { if (!cancelled) setDuplicates(rows) })
+        .catch(() => { if (!cancelled) setDuplicates([]) })
+    }, q.length < 2 ? 0 : 250)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
   }, [form.national_id_masked, form.phone, form.display_name, form.birth_date])
 
   const outProvince = useMemo(() => Boolean(form.province && form.province !== 'กรุงเทพมหานคร'), [form.province])
