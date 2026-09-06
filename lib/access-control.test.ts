@@ -39,6 +39,9 @@ describe('ตารางสิทธิ์ CareLink', () => {
   })
 
   it('legacy aliases ใช้สิทธิ์เดียวกับ workspace ปัจจุบัน', () => {
+    expect(routeAllowed('nurse', '/nurse')).toBe(true)
+    expect(routeAllowed('manager', '/nurse')).toBe(true)
+    expect(routeAllowed('doctor', '/nurse')).toBe(false)
     expect(routeAllowed('doctor', '/doctor')).toBe(true)
     expect(routeAllowed('nurse', '/doctor')).toBe(false)
     expect(routeAllowed('infusion_staff', '/chemo')).toBe(true)
