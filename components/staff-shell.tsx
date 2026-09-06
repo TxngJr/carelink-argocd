@@ -5,9 +5,9 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
 import {
-  Activity, BarChart3, CalendarDays, ChevronLeft, ClipboardCheck, Droplets, FlaskConical,
-  LayoutDashboard, LogOut, MapPin, Menu, Monitor, PanelLeftClose, PanelLeftOpen, Pill,
-  Stethoscope, Tv, Users, X,
+  Activity, BarChart3, CalendarCheck, CalendarDays, ChevronLeft, ClipboardCheck, Droplets, FlaskConical,
+  GitCompareArrows, History, LayoutDashboard, LogOut, MapPin, Menu, Monitor, PanelLeftClose, PanelLeftOpen, Pill,
+  ScanLine, Settings2, Stethoscope, Tv, Users, X,
 } from 'lucide-react'
 import { clientApi } from '@/lib/client'
 import type { PublicUser, Role } from '@/lib/types'
@@ -22,20 +22,30 @@ const NAV_ITEMS: NavSection[] = [
       { href: '/operations', label: 'ภาพรวมการให้บริการ', icon: LayoutDashboard, roles: ['admin', 'manager', 'operations', 'doctor', 'physician', 'nurse'] },
       { href: '/operations/schedule', label: 'ตารางเวลา', icon: CalendarDays, roles: ['admin', 'manager', 'operations', 'doctor', 'physician', 'nurse'] },
       { href: '/operations/patients', label: 'ผู้ป่วยในระบบ', icon: Users, roles: ['admin', 'manager', 'operations', 'doctor', 'physician', 'nurse'] },
-      { href: '/operations/insights', label: 'สถิติและประสิทธิภาพ', icon: BarChart3, roles: ['admin', 'manager', 'operations'] },
+      { href: '/operations/insights', label: 'สถิติจากระบบจริง', icon: BarChart3, roles: ['admin', 'manager', 'operations'] },
+      { href: '/operations/historical', label: 'Historical benchmark', icon: History, roles: ['admin', 'manager', 'operations'] },
+      { href: '/operations/methodology', label: 'DynaFlow methodology', icon: GitCompareArrows, roles: ['admin', 'manager', 'operations', 'doctor', 'physician', 'nurse'] },
       { href: '/map', label: 'แผนผังจุดบริการ', icon: MapPin, roles: ['admin', 'manager', 'operations', 'doctor', 'nurse'] },
     ],
   },
   {
     section: 'งานบริการทางคลินิก',
     items: [
+      { href: '/appointments', label: 'นัดหมายและเช็กอิน', icon: CalendarCheck, roles: ['admin', 'manager', 'nurse', 'doctor', 'physician'] },
       { href: '/registration', label: 'ลงทะเบียนและตรวจสิทธิ', icon: ClipboardCheck, roles: ['admin', 'manager', 'nurse', 'registration'] },
       { href: '/vitals', label: 'วัดสัญญาณชีพ', icon: Activity, roles: ['admin', 'manager', 'nurse', 'vitals_staff'] },
       { href: '/intake', label: 'ซักประวัติและคัดกรอง', icon: ClipboardCheck, roles: ['admin', 'manager', 'nurse'] },
       { href: '/physician', label: 'ห้องตรวจแพทย์', icon: Stethoscope, roles: ['admin', 'manager', 'doctor', 'physician'] },
-      { href: '/lab', label: 'ห้องปฏิบัติการ', icon: FlaskConical, roles: ['admin', 'manager', 'doctor', 'lab_staff'] },
+      { href: '/lab', label: 'ห้องปฏิบัติการ', icon: FlaskConical, roles: ['admin', 'manager', 'doctor', 'physician', 'lab_staff'] },
+      { href: '/imaging', label: 'รังสีวินิจฉัย / Imaging', icon: ScanLine, roles: ['admin', 'manager', 'operations', 'doctor', 'physician', 'nurse'] },
       { href: '/pharmacy', label: 'ห้องยา', icon: Pill, roles: ['admin', 'manager', 'pharmacy_staff'] },
-      { href: '/infusion', label: 'ห้องให้สารน้ำและยา', icon: Droplets, roles: ['admin', 'manager', 'infusion_staff', 'chemo_staff'] },
+      { href: '/infusion', label: 'Chemotherapy / Infusion', icon: Droplets, roles: ['admin', 'manager', 'infusion_staff', 'chemo_staff'] },
+    ],
+  },
+  {
+    section: 'ระบบและการสาธิต',
+    items: [
+      { href: '/admin', label: 'Admin / Audit / Reset', icon: Settings2, roles: ['admin'] },
     ],
   },
   {
@@ -73,7 +83,7 @@ export function StaffShell({
     clientApi.getStaffMe().then(setUser).catch(() => null)
     const es = new EventSource('/api/realtime/stream?scope=staff')
     es.onmessage = () => setLiveEvents((value) => value + 1)
-    for (const eventName of ['queue_updated', 'queue_called', 'encounter_moved', 'session_updated', 'chair_released']) {
+    for (const eventName of ['queue_updated', 'queue_called', 'encounter_moved', 'session_updated', 'chair_released', 'imaging_started', 'imaging_completed', 'safety_review_updated']) {
       es.addEventListener(eventName, () => setLiveEvents((value) => value + 1))
     }
     return () => es.close()
