@@ -6,8 +6,8 @@ import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
 import {
   Activity, BarChart3, CalendarCheck, CalendarDays, ChevronLeft, ClipboardCheck, Droplets, FlaskConical,
-  LayoutDashboard, LogOut, MapPin, Menu, Monitor, PanelLeftClose, PanelLeftOpen, Pill,
-  Stethoscope, Tv, Users, X,
+  LayoutDashboard, LoaderCircle, LogOut, MapPin, Menu, Monitor, PanelLeftClose, PanelLeftOpen, Pill,
+  Stethoscope, Tv, Users, Wifi, WifiOff, X,
 } from 'lucide-react'
 import { clientApi } from '@/lib/client'
 import { roleHomePath, routeAllowed } from '@/lib/access-control'
@@ -15,10 +15,8 @@ import type { PublicUser, Role } from '@/lib/types'
 
 type NavItem = { href: string; label: string; icon: typeof Activity }
 type NavSection = { section: string; items: NavItem[] }
+type ConnectionState = 'connecting' | 'connected' | 'disconnected'
 
-// แสดงเฉพาะ route ที่มีหน้าจอจริงใน app/ เท่านั้น
-// สิทธิ์ของแต่ละ role ใช้ routeAllowed() จาก access-control เป็น source of truth เดียว
-// เพื่อป้องกัน Navbar กับ route guard ให้สิทธิ์ไม่ตรงกัน
 const NAV_ITEMS: NavSection[] = [
   {
     section: 'บริหารการให้บริการ',
@@ -71,14 +69,17 @@ export function StaffShell({
   const router = useRouter()
   const [user, setUser] = useState<PublicUser | null>(null)
   const [liveEvents, setLiveEvents] = useState(0)
+  const [connection, setConnection] = useState<ConnectionState>('connecting')
   const [mobileOpen, setMobileOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
 
   useEffect(() => {
     clientApi.getStaffMe().then(setUser).catch(() => null)
     const es = new EventSource('/api/realtime/stream?scope=staff')
+    es.onopen = () => setConnection('connected')
+    es.onerror = () => setConnection('disconnected')
     es.onmessage = () => setLiveEvents((value) => value + 1)
-    for (const eventName of ['queue_updated', 'queue_called', 'encounter_moved', 'session_updated', 'chair_released', 'imaging_started', 'imaging_completed', 'safety_review_updated']) {
+    for (const eventName of ['queue_updated', 'queue_called', 'encounter_moved', 'session_updated', 'chair_released', 'safety_review_updated']) {
       es.addEventListener(eventName, () => setLiveEvents((value) => value + 1))
     }
     return () => es.close()
@@ -91,6 +92,9 @@ export function StaffShell({
     ...section,
     items: section.items.filter((item) => routeAllowed(currentRole, item.href)),
   })).filter((section) => section.items.length > 0), [currentRole])
+  const currentItem = useMemo(() => sections.flatMap((section) => section.items)
+    .sort((a, b) => b.href.length - a.href.length)
+    .find((item) => pathname === item.href || (item.href !== '/operations' && pathname.startsWith(`${item.href}/`))) || null, [pathname, sections])
 
   async function logout() {
     await clientApi.logout().catch(() => null)
@@ -98,8 +102,12 @@ export function StaffShell({
     router.refresh()
   }
 
+  const LiveIcon = connection === 'connected' ? Wifi : connection === 'connecting' ? LoaderCircle : WifiOff
+  const liveLabel = connection === 'connected' ? 'ข้อมูลสด' : connection === 'connecting' ? 'กำลังเชื่อมต่อ' : 'การเชื่อมต่อสะดุด'
+
   return (
     <div className={`staff-shell ${collapsed ? 'sidebar-collapsed' : ''} ${mobileOpen ? 'sidebar-open' : ''}`}>
+      <a className="skip-link" href="#main-content">ข้ามไปเนื้อหาหลัก</a>
       {mobileOpen && <button className="sidebar-scrim" aria-label="ปิดเมนู" onClick={() => setMobileOpen(false)} />}
       <aside className="staff-sidebar">
         <div className="sidebar-brand-row">
@@ -116,9 +124,9 @@ export function StaffShell({
               <div className="sidebar-section-title">{section.section}</div>
               {section.items.map((item) => {
                 const Icon = item.icon
-                const active = pathname === item.href || (item.href !== '/operations' && pathname.startsWith(item.href))
-                return <Link key={item.href} href={item.href} className={active ? 'active' : ''} title={collapsed ? item.label : undefined} onClick={() => setMobileOpen(false)}>
-                  <Icon size={19} aria-hidden="true" /><strong>{item.label}</strong>{active && <ChevronLeft size={14} className="nav-current" />}
+                const active = pathname === item.href || (item.href !== '/operations' && pathname.startsWith(`${item.href}/`))
+                return <Link key={item.href} href={item.href} className={active ? 'active' : ''} aria-current={active ? 'page' : undefined} title={collapsed ? item.label : undefined} onClick={() => setMobileOpen(false)}>
+                  <Icon size={19} aria-hidden="true" /><strong>{item.label}</strong>{active && <ChevronLeft size={14} className="nav-current" aria-hidden="true" />}
                 </Link>
               })}
             </div>
@@ -127,21 +135,31 @@ export function StaffShell({
 
         <div className="sidebar-footer">
           <button className="sidebar-collapse" onClick={() => setCollapsed((value) => !value)} aria-label={collapsed ? 'ขยายเมนู' : 'ย่อเมนู'}>
-            {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}<span>{collapsed ? '' : 'ย่อเมนู'}</span>
+            {collapsed ? <PanelLeftOpen size={18} aria-hidden="true" /> : <PanelLeftClose size={18} aria-hidden="true" />}<span>{collapsed ? '' : 'ย่อเมนู'}</span>
           </button>
           <div className="sidebar-user">
             <div className="avatar small">{currentName.slice(0, 1)}</div>
             <div><strong>{currentName}</strong><span>{ROLE_LABEL[currentRole] || currentRole}</span></div>
-            <button onClick={() => void logout()} title="ออกจากระบบ" aria-label="ออกจากระบบ"><LogOut size={17} /></button>
+            <button onClick={() => void logout()} title="ออกจากระบบ" aria-label="ออกจากระบบ"><LogOut size={17} aria-hidden="true" /></button>
           </div>
         </div>
       </aside>
 
-      <main className="staff-main">
+      <main className="staff-main" id="main-content" tabIndex={-1}>
         <header className="staff-topbar">
-          <button className="mobile-menu-button" onClick={() => setMobileOpen(true)} aria-label="เปิดเมนู"><Menu size={21} /></button>
+          <button className="mobile-menu-button" onClick={() => setMobileOpen(true)} aria-label="เปิดเมนู"><Menu size={21} aria-hidden="true" /></button>
           <div className="topbar-title"><span>CareLink สำหรับเจ้าหน้าที่</span><strong>ระบบบริหารการไหลเวียนผู้ป่วย</strong></div>
-          <div className="live-indicator" title={`${liveEvents} เหตุการณ์ในหน้าจอนี้`}><i /><span>เชื่อมต่อข้อมูลสด</span></div>
+          {currentItem && (() => {
+            const CurrentIcon = currentItem.icon
+            return <div className="topbar-current" aria-label={`หน้าปัจจุบัน ${currentItem.label}`}>
+              <span className="topbar-current-icon"><CurrentIcon size={17} aria-hidden="true" /></span>
+              <div className="topbar-current-copy"><small>หน้าปัจจุบัน</small><strong>{currentItem.label}</strong></div>
+            </div>
+          })()}
+          <div className={`live-indicator ${connection}`} title={`${liveLabel} · รับเหตุการณ์ ${liveEvents} ครั้งในหน้าจอนี้`} role="status">
+            <LiveIcon className={connection === 'connecting' ? 'spin' : undefined} size={15} aria-hidden="true" />
+            <span>{liveLabel}</span>
+          </div>
         </header>
         {children}
       </main>

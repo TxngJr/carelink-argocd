@@ -1,18 +1,29 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { CheckCircle2, Info, LoaderCircle, TriangleAlert, X, XCircle } from 'lucide-react'
+import { CheckCircle2, Inbox, Info, LoaderCircle, TriangleAlert, X, XCircle } from 'lucide-react'
 import { formatCountdown, phaseRemainingSeconds } from '@/lib/infusion-time'
 import type { InfusionPhase } from '@/lib/types'
 
-export function PageHeader({ eyebrow, title, description, actions }: {
+export function PageHeader({ eyebrow, title, description, actions, icon, badge }: {
   eyebrow?: string
   title: string
   description?: string
   actions?: React.ReactNode
+  icon?: React.ReactNode
+  badge?: React.ReactNode
 }) {
   return <div className="section-heading page-header">
-    <div>{eyebrow && <span className="eyebrow">{eyebrow}</span>}<h2>{title}</h2>{description && <p>{description}</p>}</div>
+    <div className="page-header-copy">
+      <div className="page-header-title-row">
+        {icon && <span className="page-header-icon" aria-hidden="true">{icon}</span>}
+        <div>
+          <div className="page-header-kicker-row">{eyebrow && <span className="eyebrow">{eyebrow}</span>}{badge}</div>
+          <h2>{title}</h2>
+        </div>
+      </div>
+      {description && <p>{description}</p>}
+    </div>
     {actions && <div className="page-header-actions">{actions}</div>}
   </div>
 }
@@ -22,6 +33,18 @@ export function StatusBadge({ tone = 'neutral', children }: {
   children: React.ReactNode
 }) {
   return <span className={`status-badge ${tone}`}>{children}</span>
+}
+
+export function Feedback({ tone = 'info', children, className = '' }: {
+  tone?: 'success' | 'danger' | 'warning' | 'info'
+  children: React.ReactNode
+  className?: string
+}) {
+  const Icon = tone === 'success' ? CheckCircle2 : tone === 'danger' ? XCircle : tone === 'warning' ? TriangleAlert : Info
+  return <div className={`inline-alert ${tone} feedback-row ${className}`.trim()} role={tone === 'danger' ? 'alert' : 'status'}>
+    <Icon size={18} aria-hidden="true" />
+    <div>{children}</div>
+  </div>
 }
 
 export function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
@@ -160,13 +183,13 @@ export function ToastViewport({ messages, onDismiss }: { messages: ToastMessage[
 }
 
 export function EmptyState({ icon, title, description }: { icon?: React.ReactNode; title: string; description?: string }) {
-  return <div className="modern-empty">{icon}<strong>{title}</strong>{description && <p>{description}</p>}</div>
+  return <div className="modern-empty">{icon || <Inbox size={28} aria-hidden="true" />}<strong>{title}</strong>{description && <p>{description}</p>}</div>
 }
 
 export function LoadingState({ label = 'กำลังโหลดข้อมูล…' }: { label?: string }) {
-  return <div className="modern-empty" role="status"><LoaderCircle className="spin" size={24} aria-hidden="true" /><strong>{label}</strong></div>
+  return <div className="modern-empty" role="status"><LoaderCircle className="spin" size={24} aria-hidden="true" /><strong>{label}</strong><p>ระบบกำลังซิงก์ข้อมูลล่าสุด กรุณารอสักครู่</p></div>
 }
 
 export function ErrorState({ title = 'ไม่สามารถโหลดข้อมูลได้', description }: { title?: string; description?: string }) {
-  return <EmptyState icon={<XCircle size={26} />} title={title} description={description} />
+  return <EmptyState icon={<XCircle size={26} aria-hidden="true" />} title={title} description={description} />
 }

@@ -1,196 +1,192 @@
 'use client'
 
 import React, { useState } from 'react'
-import { AlertCircle } from 'lucide-react'
+import {
+  Activity, Gauge, HeartPulse, Ruler, Save, Scale, Thermometer, TriangleAlert, UserRound, Wind,
+} from 'lucide-react'
 import { StaffShell } from '@/components/staff-shell'
 import { QueueWorkspace } from '@/components/queue-workspace'
+import { Feedback, FormField, PageHeader, StatusBadge } from '@/components/ui'
 import { clientApi } from '@/lib/client'
 import type { Encounter } from '@/lib/types'
+
+type FeedbackState = { tone: 'success' | 'danger' | 'warning' | 'info'; message: string } | null
+
+type VitalsDraft = {
+  sbp: string
+  dbp: string
+  pulse: string
+  temp: string
+  respRate: string
+  spo2: string
+  weight: string
+  height: string
+  painScore: string
+  notes: string
+}
+
+const emptyDraft: VitalsDraft = {
+  sbp: '', dbp: '', pulse: '', temp: '', respRate: '', spo2: '', weight: '', height: '', painScore: '0', notes: '',
+}
 
 export default function VitalsPage() {
   const [encounterId, setEncounterId] = useState('')
   const [encounter, setEncounter] = useState<Encounter | null>(null)
-  const [sbp, setSbp] = useState('120')
-  const [dbp, setDbp] = useState('80')
-  const [pulse, setPulse] = useState('78')
-  const [temp, setTemp] = useState('36.6')
-  const [respRate, setRespRate] = useState('18')
-  const [spo2, setSpo2] = useState('98')
-  const [weight, setWeight] = useState('65')
-  const [height, setHeight] = useState('170')
-  const [painScore, setPainScore] = useState('0')
-  const [notes, setNotes] = useState('')
+  const [draft, setDraft] = useState<VitalsDraft>(emptyDraft)
   const [busy, setBusy] = useState(false)
-  const [message, setMessage] = useState('')
+  const [feedback, setFeedback] = useState<FeedbackState>(null)
 
-  const bmi = (Number(weight) > 0 && Number(height) > 0)
-    ? (Number(weight) / ((Number(height) / 100) * (Number(height) / 100))).toFixed(1)
+  function setField<K extends keyof VitalsDraft>(key: K, value: VitalsDraft[K]) {
+    setDraft((previous) => ({ ...previous, [key]: value }))
+    if (feedback?.tone === 'danger') setFeedback(null)
+  }
+
+  const weightNumber = Number(draft.weight)
+  const heightNumber = Number(draft.height)
+  const bmi = draft.weight && draft.height && weightNumber > 0 && heightNumber > 0
+    ? (weightNumber / ((heightNumber / 100) * (heightNumber / 100))).toFixed(1)
     : '-'
 
-  const isHypertension = Number(sbp) >= 140 || Number(dbp) >= 90
-  const isHypoxia = Number(spo2) < 95
-  const isFever = Number(temp) >= 37.8
+  const sbpNumber = Number(draft.sbp)
+  const dbpNumber = Number(draft.dbp)
+  const spo2Number = Number(draft.spo2)
+  const tempNumber = Number(draft.temp)
+  const isHypertension = Boolean(draft.sbp && draft.dbp) && (sbpNumber >= 140 || dbpNumber >= 90)
+  const isHypoxia = Boolean(draft.spo2) && spo2Number < 95
+  const isFever = Boolean(draft.temp) && tempNumber >= 37.8
 
-  async function handleSaveVitals(e: React.FormEvent) {
-    e.preventDefault()
+  async function handleSaveVitals(event: React.FormEvent) {
+    event.preventDefault()
     if (!encounterId) {
-      setMessage('กรุณาเลือกผู้ป่วยจากคิว VM ด้านล่าง')
+      setFeedback({ tone: 'warning', message: 'กรุณาเลือกผู้ป่วยจากคิว VM ด้านล่างก่อนบันทึก' })
       return
     }
+    if (!draft.sbp || !draft.dbp) {
+      setFeedback({ tone: 'warning', message: 'กรุณากรอกความดันตัวบนและตัวล่างให้ครบ' })
+      return
+    }
+
     setBusy(true)
-    setMessage('')
+    setFeedback(null)
     try {
       await clientApi.saveVitals(encounterId, {
-        sbp: Number(sbp),
-        dbp: Number(dbp),
-        pulse: Number(pulse),
-        temperature: Number(temp),
-        respiratory_rate: Number(respRate),
-        spo2: Number(spo2),
-        weight_kg: Number(weight),
-        height_cm: Number(height),
-        pain_score: Number(painScore),
-        notes,
+        sbp: Number(draft.sbp),
+        dbp: Number(draft.dbp),
+        ...(draft.pulse ? { pulse: Number(draft.pulse) } : {}),
+        ...(draft.temp ? { temperature: Number(draft.temp) } : {}),
+        ...(draft.respRate ? { respiratory_rate: Number(draft.respRate) } : {}),
+        ...(draft.spo2 ? { spo2: Number(draft.spo2) } : {}),
+        ...(draft.weight ? { weight_kg: Number(draft.weight) } : {}),
+        ...(draft.height ? { height_cm: Number(draft.height) } : {}),
+        ...(draft.painScore ? { pain_score: Number(draft.painScore) } : {}),
+        notes: draft.notes,
       })
-      setMessage('บันทึกสัญญาณชีพสำเร็จ พร้อมส่งต่อซักประวัติพยาบาล (MHT)')
+      setFeedback({ tone: 'success', message: 'บันทึกสัญญาณชีพสำเร็จ จากนั้นกด “เสร็จและส่งต่อ” ที่คิว VM เพื่อส่งผู้ป่วยไป MHT' })
     } catch (cause) {
-      setMessage(cause instanceof Error ? cause.message : 'บันทึกไม่สำเร็จ')
+      setFeedback({ tone: 'danger', message: cause instanceof Error ? cause.message : 'บันทึกสัญญาณชีพไม่สำเร็จ' })
     } finally {
       setBusy(false)
     }
   }
 
   async function selectEncounter(id: string) {
-    setEncounterId(id)
-    setEncounter(await clientApi.getEncounterDetail(id))
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+    try {
+      setFeedback(null)
+      const detail = await clientApi.getEncounterDetail(id)
+      setEncounterId(id)
+      setEncounter(detail)
+      setDraft(emptyDraft)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    } catch (cause) {
+      setFeedback({ tone: 'danger', message: cause instanceof Error ? cause.message : 'โหลดข้อมูลผู้ป่วยไม่สำเร็จ' })
+    }
   }
 
   return (
     <StaffShell role="vitals_staff" displayName="พยาบาลจุดวัดสัญญาณชีพ">
-      <div style={{ display: 'grid', gap: 20 }}>
-        <div className="section-heading">
-          <div>
-            <span className="eyebrow">VITAL SIGNS INTAKE WORKSPACE</span>
-            <h2>จุดวัดสัญญาณชีพและคัดกรองเบื้องต้น (VM)</h2>
-            <p>บันทึกความดันโลหิต ชีพจร อุณหภูมิ ออกซิเจน SpO2 คำนวณ BMI อัตโนมัติและตรวจจับค่าวิกฤต</p>
-          </div>
-        </div>
+      <div className="staff-page-stack">
+        <PageHeader
+          eyebrow="VITAL SIGNS INTAKE"
+          title="จุดวัดสัญญาณชีพและคัดกรองเบื้องต้น (VM)"
+          description="เลือกผู้ป่วยจากคิวก่อนทุกครั้ง บันทึกสัญญาณชีพ แล้วปิดงานที่คิว VM เพื่อส่งต่อไปซักประวัติ MHT"
+          icon={<Activity size={22} />}
+          badge={encounter ? <StatusBadge tone="info">คิว {encounter.current_queue_no}</StatusBadge> : undefined}
+        />
+
+        {feedback && <Feedback tone={feedback.tone}>{feedback.message}</Feedback>}
 
         <div className="clinical-grid">
-          {/* Vitals Form */}
           <div className="workspace-card">
             <div className="workspace-card-head">
-              <h3>บันทึกค่าสัญญาณชีพ (Vital Signs Entry)</h3>
-              {bmi !== '-' && (
-                <span className="status-pill flowing">
-                  BMI: {bmi} kg/m²
-                </span>
-              )}
+              <div><span className="card-kicker"><HeartPulse size={14} aria-hidden="true" />Vital Signs Entry</span><h3>บันทึกค่าสัญญาณชีพ</h3></div>
+              {bmi !== '-' && <StatusBadge tone="info">BMI {bmi} kg/m²</StatusBadge>}
             </div>
 
-            <form style={{ padding: '0 20px 24px', display: 'grid', gap: 14 }} onSubmit={handleSaveVitals}>
-              <div className="inline-alert" role="status">{encounter ? <><strong>{encounter.patient?.display_name || 'ผู้ป่วย'} · HN {encounter.patient?.hn || '—'}</strong><br />คิว {encounter.current_queue_no} · {encounter.current_station}</> : 'เลือกผู้ป่วยจากคิว VM ด้านล่างก่อนบันทึก'}</div>
+            <form style={{ padding: '18px 20px 24px', display: 'grid', gap: 14 }} onSubmit={handleSaveVitals}>
+              {encounter ? <div className="patient-context-card">
+                <span className="patient-context-icon"><UserRound size={19} aria-hidden="true" /></span>
+                <div><strong>{encounter.patient?.display_name || 'ผู้ป่วย'} · HN {encounter.patient?.hn || '—'}</strong><small>{encounter.current_queue_no} · {encounter.current_station}</small></div>
+              </div> : <Feedback tone="info">เลือกผู้ป่วยจากคิว VM ด้านล่างก่อนเริ่มกรอกค่า เพื่อป้องกันข้อมูลข้ามผู้ป่วย</Feedback>}
 
-              <div className="form-two">
-                <label>
-                  <span>ความดันตัวบน (SBP mmHg) <em>*</em></span>
-                  <input type="number" value={sbp} onChange={(e) => setSbp(e.target.value)} />
-                </label>
-                <label>
-                  <span>ความดันตัวล่าง (DBP mmHg) <em>*</em></span>
-                  <input type="number" value={dbp} onChange={(e) => setDbp(e.target.value)} />
-                </label>
+              <div className="vitals-summary-grid" aria-label="สรุปค่าที่กำลังกรอก">
+                <div className={`vital-summary ${isHypertension ? 'warning' : ''}`}><HeartPulse size={23} aria-hidden="true" /><span>ความดัน</span><strong>{draft.sbp || '—'}/{draft.dbp || '—'}</strong></div>
+                <div className="vital-summary"><Gauge size={23} aria-hidden="true" /><span>ชีพจร</span><strong>{draft.pulse || '—'} bpm</strong></div>
+                <div className={`vital-summary ${isFever ? 'warning' : ''}`}><Thermometer size={23} aria-hidden="true" /><span>อุณหภูมิ</span><strong>{draft.temp || '—'} °C</strong></div>
+                <div className={`vital-summary ${isHypoxia ? 'danger' : ''}`}><Wind size={23} aria-hidden="true" /><span>SpO₂</span><strong>{draft.spo2 || '—'} %</strong></div>
               </div>
 
               <div className="form-two">
-                <label>
-                  <span>ชีพจร (Pulse bpm)</span>
-                  <input type="number" value={pulse} onChange={(e) => setPulse(e.target.value)} />
-                </label>
-                <label>
-                  <span>อุณหภูมิร่างกาย (°C)</span>
-                  <input type="number" step="0.1" value={temp} onChange={(e) => setTemp(e.target.value)} />
-                </label>
+                <FormField label="ความดันตัวบน (SBP mmHg)" required><input required type="number" min="40" max="300" value={draft.sbp} onChange={(e) => setField('sbp', e.target.value)} placeholder="เช่น 120" /></FormField>
+                <FormField label="ความดันตัวล่าง (DBP mmHg)" required><input required type="number" min="20" max="200" value={draft.dbp} onChange={(e) => setField('dbp', e.target.value)} placeholder="เช่น 80" /></FormField>
               </div>
 
               <div className="form-two">
-                <label>
-                  <span>ออกซิเจนในเลือด SpO₂ (%)</span>
-                  <input type="number" value={spo2} onChange={(e) => setSpo2(e.target.value)} />
-                </label>
-                <label>
-                  <span>อัตราการหายใจ (RR /min)</span>
-                  <input type="number" value={respRate} onChange={(e) => setRespRate(e.target.value)} />
-                </label>
+                <FormField label="ชีพจร (Pulse bpm)"><input type="number" min="20" max="250" value={draft.pulse} onChange={(e) => setField('pulse', e.target.value)} placeholder="เช่น 78" /></FormField>
+                <FormField label="อุณหภูมิร่างกาย (°C)"><input type="number" min="30" max="45" step="0.1" value={draft.temp} onChange={(e) => setField('temp', e.target.value)} placeholder="เช่น 36.6" /></FormField>
               </div>
 
               <div className="form-two">
-                <label>
-                  <span>น้ำหนักตัว (กก.)</span>
-                  <input type="number" step="0.1" value={weight} onChange={(e) => setWeight(e.target.value)} />
-                </label>
-                <label>
-                  <span>ส่วนสูง (ซม.)</span>
-                  <input type="number" value={height} onChange={(e) => setHeight(e.target.value)} />
-                </label>
+                <FormField label="ออกซิเจนในเลือด SpO₂ (%)"><input type="number" min="50" max="100" value={draft.spo2} onChange={(e) => setField('spo2', e.target.value)} placeholder="เช่น 98" /></FormField>
+                <FormField label="อัตราการหายใจ (RR /min)"><input type="number" min="4" max="80" value={draft.respRate} onChange={(e) => setField('respRate', e.target.value)} placeholder="เช่น 18" /></FormField>
               </div>
 
-              <label>
-                <span>ระดับความปวด Pain Score (0–10)</span>
-                <input type="number" min="0" max="10" value={painScore} onChange={(e) => setPainScore(e.target.value)} />
-              </label>
+              <div className="form-two">
+                <FormField label="น้ำหนักตัว (กก.)"><input type="number" min="2" max="500" step="0.1" value={draft.weight} onChange={(e) => setField('weight', e.target.value)} placeholder="เช่น 65" /></FormField>
+                <FormField label="ส่วนสูง (ซม.)"><input type="number" min="50" max="250" value={draft.height} onChange={(e) => setField('height', e.target.value)} placeholder="เช่น 170" /></FormField>
+              </div>
 
-              <label><span>บันทึกเพิ่มเติม</span><textarea rows={2} value={notes} onChange={(event) => setNotes(event.target.value)} /></label>
+              <FormField label="ระดับความปวด Pain Score (0–10)"><input type="number" min="0" max="10" value={draft.painScore} onChange={(e) => setField('painScore', e.target.value)} /></FormField>
+              <FormField label="บันทึกเพิ่มเติม"><textarea rows={2} value={draft.notes} onChange={(event) => setField('notes', event.target.value)} placeholder="ข้อมูลประกอบการคัดกรอง (ถ้ามี)" /></FormField>
 
-              {/* Warning flags */}
-              {(isHypertension || isHypoxia || isFever) && (
-                <div className="inline-alert warning" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <AlertCircle size={18} aria-hidden="true" />
-                  <div>
-                    {isHypertension && <div>• ความดันโลหิตสูงกว่าเกณฑ์ปกติ (SBP ≥ 140 หรือ DBP ≥ 90)</div>}
-                    {isHypoxia && <div>• ค่าความอิ่มตัวออกซิเจนต่ำ (SpO₂ &lt; 95%)</div>}
-                    {isFever && <div>• มีไข้ (Temp ≥ 37.8°C)</div>}
-                  </div>
-                </div>
-              )}
+              {(isHypertension || isHypoxia || isFever) && <Feedback tone="warning">
+                <strong>พบค่าที่ควรตรวจทานก่อนบันทึก</strong>
+                {isHypertension && <div>• ความดันสูงกว่าช่วงตัวอย่างที่ระบบใช้เตือน</div>}
+                {isHypoxia && <div>• SpO₂ ต่ำกว่า 95%</div>}
+                {isFever && <div>• อุณหภูมิ 37.8°C ขึ้นไป</div>}
+              </Feedback>}
 
-              {message && (
-                <div className={`inline-alert ${message.includes('สำเร็จ') ? 'success' : 'danger'}`}>
-                  {message}
-                </div>
-              )}
-
-              <button className="button primary large" disabled={busy}>
-                {busy ? 'กำลังบันทึก…' : 'บันทึกสัญญาณชีพและส่งต่อ'}
+              <button className="button primary large" disabled={busy || !encounterId}>
+                <Save size={17} aria-hidden="true" />{busy ? 'กำลังบันทึก…' : 'บันทึกสัญญาณชีพ'}
               </button>
             </form>
           </div>
 
-          {/* Quick Guide Card */}
           <div style={{ display: 'grid', gap: 14 }}>
             <div className="workspace-card" style={{ padding: 20 }}>
-              <h3 style={{ marginTop: 0 }}>ช่วงตัวอย่างสำหรับการศึกษา</h3>
-              <p className="inline-alert warning">ไม่ใช่เกณฑ์หรือ protocol ทางคลินิกจริง ต้องให้บุคลากรทางการแพทย์ประเมินตามมาตรฐานของหน่วยงาน</p>
-              <div style={{ display: 'grid', gap: 8, fontSize: '.82rem', color: 'var(--muted)' }}>
-                <div style={{ padding: 8, background: '#f8faf9', borderRadius: 8 }}>
-                  <strong>BP ปกติ:</strong> 90–120 / 60–80 mmHg
-                </div>
-                <div style={{ padding: 8, background: '#f8faf9', borderRadius: 8 }}>
-                  <strong>Pulse ปกติ:</strong> 60–100 ครั้ง/นาที
-                </div>
-                <div style={{ padding: 8, background: '#f8faf9', borderRadius: 8 }}>
-                  <strong>Temp ปกติ:</strong> 36.5–37.5 °C
-                </div>
-                <div style={{ padding: 8, background: '#f8faf9', borderRadius: 8 }}>
-                  <strong>SpO₂ ปกติ:</strong> 96–100 %
-                </div>
+              <div className="form-section-title"><span><TriangleAlert size={17} aria-hidden="true" /></span><div><strong>ช่วงตัวอย่างสำหรับการศึกษา</strong><small>ใช้เพื่อช่วยทดสอบ UI เท่านั้น</small></div></div>
+              <Feedback tone="warning">ไม่ใช่เกณฑ์หรือ protocol ทางคลินิกจริง บุคลากรต้องประเมินตามมาตรฐานของหน่วยงาน</Feedback>
+              <div className="guide-list" style={{ marginTop: 12 }}>
+                <div className="guide-item"><HeartPulse size={16} aria-hidden="true" /><span><strong>BP:</strong> ตัวอย่าง 90–120 / 60–80 mmHg</span></div>
+                <div className="guide-item"><Gauge size={16} aria-hidden="true" /><span><strong>Pulse:</strong> ตัวอย่าง 60–100 ครั้ง/นาที</span></div>
+                <div className="guide-item"><Thermometer size={16} aria-hidden="true" /><span><strong>Temp:</strong> ตัวอย่าง 36.5–37.5 °C</span></div>
+                <div className="guide-item"><Wind size={16} aria-hidden="true" /><span><strong>SpO₂:</strong> ตัวอย่าง 96–100%</span></div>
+                <div className="guide-item"><Scale size={16} aria-hidden="true" /><span><strong>BMI:</strong> คำนวณอัตโนมัติเมื่อกรอกน้ำหนักและส่วนสูง</span></div>
+                <div className="guide-item"><Ruler size={16} aria-hidden="true" /><span>ช่อง optional ที่ไม่กรอกจะไม่ถูกส่งเป็นค่า 0</span></div>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Station VM Queue Control */}
         <QueueWorkspace role="nurse" stationCodes={['VM']} onSelectEncounter={(id) => void selectEncounter(id)} />
       </div>
     </StaffShell>
