@@ -15,29 +15,34 @@ CareLink เป็น educational prototype สำหรับจัดการ
 - Staff UI ภาษาไทยด้วย Noto Sans Thai, ตัวเลขด้วย IBM Plex Mono และ Lucide icons
 - Docker image เดียว: `ghcr.io/txngjr/carelink-argocd-web:<sha>`
 
-## Staff workspaces
+## Staff workspaces และสิทธิ์ตามบทบาท
 
-| Workspace | URL | ผู้ใช้งานหลัก |
+Navbar, route guard, station queue และ API guard ใช้หลัก least privilege: แต่ละบทบาทเห็นและดำเนินการเฉพาะ workspace ที่รับผิดชอบ ส่วน Admin ใช้ได้ทุก staff workspace
+
+| บทบาท | Workspace ที่ใช้ | URL หลัก |
 |---|---|---|
-| Operations | `/operations` | Operations / Manager / Admin |
-| Schedule | `/operations/schedule` | Operations / Manager |
-| Registration | `/registration` | Registration / Nurse |
-| Vitals | `/vitals` | Vitals staff / Nurse |
-| Intake | `/intake` | Nurse |
-| Physician | `/physician` | Doctor |
-| Laboratory | `/lab` | Lab staff |
-| Pharmacy | `/pharmacy` | Pharmacy staff |
-| Infusion Lounge | `/infusion` | Infusion staff / Manager / Admin |
+| Admin | ทุก staff workspace | `/operations` |
+| Manager | ภาพรวม, ตารางเวลา, ผู้ป่วยในระบบ, Insights, แผนผัง | `/operations` |
+| Operations | ภาพรวม, ตารางเวลา, ผู้ป่วยในระบบ, Insights, แผนผัง | `/operations` |
+| Nurse | นัดหมาย/เช็กอิน และซักประวัติ/คัดกรอง | `/appointments`, `/intake` |
+| Registration | ลงทะเบียนและตรวจสิทธิ NPR/EV | `/registration` |
+| Vitals staff | วัดสัญญาณชีพ VM | `/vitals` |
+| Doctor / Physician | ยืนยันนัดและห้องตรวจ PC1–PC4 | `/physician/appointments`, `/physician` |
+| Lab staff | LAB/LABC | `/lab` |
+| Pharmacy staff | PD | `/pharmacy` |
+| Infusion staff | INFUSION | `/infusion` |
 
-`/nurse` และ `/doctor` redirect ไป workspace หลัก ส่วน `/chemo` redirect ไป `/infusion` เพื่อรองรับ bookmark เดิม ระบบฉายแสงไม่มี route, UI หรือ API ที่สร้างข้อมูลใหม่แล้ว แต่ collection `radiation_sessions` จะไม่ถูกลบ
+`/appointments` เป็น workspace ของพยาบาลเท่านั้น ส่วนแพทย์ยืนยันนัดที่ `/physician/appointments` และตรวจผู้ป่วยที่ `/physician` เพื่อไม่ให้ workflow ของ Nurse/Doctor ปะปนกันในหน้าเดียว
+
+`/nurse` และ `/doctor` redirect ไป workspace หลักของบทบาท ส่วน `/chemo` redirect ไป `/infusion` เพื่อรองรับ bookmark เดิม TV และ Kiosk ยังคงเป็น public routes แต่ไม่แสดงใน Navbar ของเจ้าหน้าที่
 
 เส้นทางใหม่ที่แพทย์สร้างได้ใน public demo จำกัดไว้ที่ Station ที่มี operator workspace ครบวงจร ได้แก่ `LAB`, `LABC`, `INFUSION` และ `PD` ก่อนจบที่ `DH` เพื่อป้องกัน journey ค้างที่จุดอ้างอิงบนแผนผังซึ่งยังไม่มีหน้าปฏิบัติงาน ส่วน `DH` และ tail `HA → IPW` เป็น terminal semantics ที่ระบบปิดอัตโนมัติหลัง Station สุดท้ายที่มีเจ้าหน้าที่ทำงานเสร็จ จึงไม่ต้องมีเจ้าหน้าที่มาปิดคิว terminal แยก
 
 ## Infusion Lounge
 
 - เก้าอี้เริ่มต้น 8 ตัว จำกัดรวม 100 ตัวโดยค่าเริ่มต้น (ปรับด้วย `INFUSION_MAX_CHAIRS`) และ soft-deactivate เพื่อรักษาประวัติ
-- 4 แท็บ: ภาพรวม, คิว, ประวัติ และตั้งค่า (Manager/Admin)
-- Doctor สร้าง Infusion order พร้อม Template, planned time และ duration override ได้ ระบบเติม `INFUSION` ใน route โดยไม่สร้างซ้ำ
+- Infusion staff ใช้งานภาพรวม คิว ประวัติ และ session; การตั้งค่า resource/template จำกัดไว้ที่ Admin
+- Doctor สร้าง Infusion order พร้อม Template, planned time และ duration override ได้ ระบบเติม `INFUSION` ใน route โดยไม่สร้างซ้ำ แต่แพทย์ไม่มีสิทธิ์ควบคุมเก้าอี้หรือ session ใน Infusion Lounge
 - readiness ใช้ active order, lab verified และ medication ready ตาม Template
 - คง FIFO ของคิวที่ยังไม่พร้อม และเสนอคิวพร้อมลำดับถัดไปพร้อม audit reason
 - call จะจองเก้าอี้ทันที; countdown เริ่มเมื่อรับตัวและเริ่ม phase
@@ -103,7 +108,7 @@ docker compose down
 unset JWT_SECRET
 ```
 
-E2E ครอบคลุมทั้ง public accessibility/kiosk, role-aware navbar/redirect และ physician → infusion journey จน `encounter`/appointment เป็น `completed` พร้อมตรวจว่าไม่มี `DH/HA/IPW` queue ค้าง
+E2E ครอบคลุม public accessibility/kiosk, strict role-aware navbar/redirect/API boundary และ physician → infusion journey จน `encounter`/appointment เป็น `completed` พร้อมตรวจว่าไม่มี `DH/HA/IPW` queue ค้าง
 
 - `GET /health/live` ตรวจ process ของ Next.js โดยไม่ผูกกับฐานข้อมูล
 - `GET /health/ready` ตรวจความพร้อมของ MongoDB

@@ -1,36 +1,41 @@
 import type { Role } from '@/lib/types'
 
-export const OPERATIONS_READ_ROLES: Role[] = ['admin', 'manager', 'operations', 'doctor', 'physician', 'nurse']
+/**
+ * Strict RBAC policy for staff workspaces.
+ *
+ * Rules:
+ * - Admin may access every staff workspace.
+ * - Manager / Operations stay in operational-management workspaces only.
+ * - Clinical roles only see and operate the workspace they are responsible for.
+ * - Doctor appointment confirmation lives under /physician/appointments; /appointments is nurse-only.
+ */
+export const OPERATIONS_READ_ROLES: Role[] = ['admin', 'manager', 'operations']
 export const OPERATIONS_MUTATION_ROLES: Role[] = ['admin', 'manager', 'operations']
 
 export const STAFF_ROUTE_ACCESS: Array<{ prefix: string; roles: Role[] }> = [
   { prefix: '/admin', roles: ['admin'] },
-  { prefix: '/operations/insights', roles: ['admin', 'manager', 'operations'] },
+  { prefix: '/operations/insights', roles: OPERATIONS_READ_ROLES },
   { prefix: '/operations', roles: OPERATIONS_READ_ROLES },
   { prefix: '/map', roles: OPERATIONS_READ_ROLES },
-  { prefix: '/appointments', roles: ['admin', 'manager', 'nurse', 'doctor', 'physician'] },
-  { prefix: '/registration', roles: ['admin', 'manager', 'registration', 'nurse'] },
-  { prefix: '/vitals', roles: ['admin', 'manager', 'vitals_staff', 'nurse'] },
-  { prefix: '/nurse', roles: ['admin', 'manager', 'nurse'] },
-  { prefix: '/intake', roles: ['admin', 'manager', 'nurse'] },
+
+  { prefix: '/appointments', roles: ['admin', 'nurse'] },
+  { prefix: '/registration', roles: ['admin', 'registration'] },
+  { prefix: '/vitals', roles: ['admin', 'vitals_staff'] },
+  { prefix: '/nurse', roles: ['admin', 'nurse'] },
+  { prefix: '/intake', roles: ['admin', 'nurse'] },
   { prefix: '/doctor', roles: ['admin', 'doctor', 'physician'] },
   { prefix: '/physician', roles: ['admin', 'doctor', 'physician'] },
   { prefix: '/lab', roles: ['admin', 'lab_staff'] },
   { prefix: '/pharmacy', roles: ['admin', 'pharmacy_staff'] },
-  { prefix: '/chemo', roles: ['admin', 'manager', 'infusion_staff', 'chemo_staff'] },
-  { prefix: '/infusion', roles: ['admin', 'manager', 'infusion_staff', 'chemo_staff'] },
+  { prefix: '/chemo', roles: ['admin', 'infusion_staff', 'chemo_staff'] },
+  { prefix: '/infusion', roles: ['admin', 'infusion_staff', 'chemo_staff'] },
 ]
 
-/**
- * หน้าหลักที่ปลอดภัยสำหรับแต่ละบทบาทหลังเข้าสู่ระบบหรือเมื่อถูก redirect
- * จากหน้าที่ไม่มีสิทธิ์ ใช้ร่วมกับ Navbar และ proxy เพื่อไม่ให้ role เฉพาะทาง
- * ถูกส่งไป /operations โดยอัตโนมัติ
- */
 export function roleHomePath(role: Role) {
   if (role === 'patient') return '/patient'
   if (role === 'admin' || role === 'manager' || role === 'operations') return '/operations'
   if (role === 'doctor' || role === 'physician') return '/physician'
-  if (role === 'nurse') return '/intake'
+  if (role === 'nurse') return '/appointments'
   if (role === 'registration') return '/registration'
   if (role === 'vitals_staff') return '/vitals'
   if (role === 'lab_staff') return '/lab'
@@ -40,9 +45,9 @@ export function roleHomePath(role: Role) {
 }
 
 export function stationAllowed(role: Role, stationCode: string) {
-  if (role === 'admin' || role === 'manager' || role === 'operations') return true
+  if (role === 'admin') return true
   if (role === 'doctor' || role === 'physician') return ['PC', 'PC2', 'PC3', 'PC4'].includes(stationCode)
-  if (role === 'nurse') return ['NPR', 'EV', 'VM', 'MHT'].includes(stationCode)
+  if (role === 'nurse') return stationCode === 'MHT'
   if (role === 'registration') return ['NPR', 'EV'].includes(stationCode)
   if (role === 'vitals_staff') return stationCode === 'VM'
   if (role === 'lab_staff') return ['LAB', 'LABC'].includes(stationCode)
@@ -58,16 +63,18 @@ export function routeAllowed(role: Role, pathname: string) {
 
 export function staffRealtimeChannelAllowed(role: Role, channel: string) {
   if (channel.startsWith('patient:') || channel === 'tv') return false
+  if (role === 'admin') return true
   if (channel.startsWith('station:')) return stationAllowed(role, channel.slice('station:'.length))
-  if (role === 'admin' || role === 'manager') return true
-  if (channel === 'operations') return OPERATIONS_READ_ROLES.includes(role)
-  if (channel === 'infusion') return role === 'infusion_staff' || role === 'chemo_staff'
+
+  if (role === 'manager' || role === 'operations') {
+    return ['operations', 'encounters', 'staff'].includes(channel)
+  }
+  if (channel === 'appointments') return ['nurse', 'doctor', 'physician'].includes(role)
+  if (channel === 'clinical') return ['nurse', 'vitals_staff', 'doctor', 'physician', 'lab_staff'].includes(role)
+  if (channel === 'orders') return ['doctor', 'physician', 'lab_staff', 'pharmacy_staff', 'infusion_staff', 'chemo_staff'].includes(role)
   if (channel === 'lab') return role === 'lab_staff' || role === 'doctor' || role === 'physician'
   if (channel === 'pharmacy') return role === 'pharmacy_staff'
-  if (channel === 'appointments') return ['operations', 'nurse', 'doctor', 'physician', 'registration'].includes(role)
-  if (channel === 'clinical') return ['nurse', 'vitals_staff', 'doctor', 'physician', 'lab_staff'].includes(role)
-  if (channel === 'orders') return ['doctor', 'physician', 'lab_staff', 'pharmacy_staff', 'infusion_staff', 'chemo_staff', 'nurse'].includes(role)
-  if (channel === 'encounters') return OPERATIONS_READ_ROLES.includes(role) || ['registration', 'vitals_staff'].includes(role)
-  if (channel === 'staff') return ['operations', 'nurse'].includes(role)
+  if (channel === 'infusion') return role === 'infusion_staff' || role === 'chemo_staff'
+  if (channel === 'encounters') return ['registration', 'vitals_staff', 'nurse', 'doctor', 'physician', 'lab_staff', 'pharmacy_staff', 'infusion_staff', 'chemo_staff'].includes(role)
   return false
 }

@@ -43,17 +43,6 @@ export type PatientSummary = RichPatientInput & {
   updated_at?: string
 }
 
-export type ImagingOrder = {
-  id: string
-  version?: number
-  patient?: { id?: string; hn?: string; display_name?: string }
-  items: Array<{ id: string; type: string; code: string; name: string; status: string; dosage?: string; results?: unknown; target_station?: string }>
-  imaging_status?: string
-  pharmacy_status?: string
-  pharmacy_review_status?: string
-  created_at?: string
-}
-
 export type ClinicalPatient = {
   id?: string
   hn?: string
@@ -158,9 +147,6 @@ export const extendedClient = {
   updateEligibility: (patientId: string, payload: Record<string, unknown>) => request<PatientSummary>(`registration/patients/${patientId}/eligibility`, { method: 'PATCH', body: JSON.stringify(payload) }),
   getClinicalContext: (encounterId: string) => request<ClinicalContext>(`clinical/context/${encounterId}`),
   saveExtendedAssessment: (encounterId: string, payload: Record<string, unknown>) => request<Record<string, unknown>>(`clinical/assessment/${encounterId}`, { method: 'PUT', body: JSON.stringify(payload) }),
-  getImagingQueue: (station = 'all') => request<ImagingOrder[]>(`imaging/queue?station=${encodeURIComponent(station)}`),
-  startImaging: (orderId: string, version: number, stationCode: string) => request<ImagingOrder>(`imaging/${orderId}/start`, { method: 'POST', body: JSON.stringify({ version, station_code: stationCode }) }),
-  completeImaging: (orderId: string, version: number, payload: { station_code: string; findings: string; impression: string }) => request<ImagingOrder>(`imaging/${orderId}/complete`, { method: 'POST', body: JSON.stringify({ version, ...payload }) }),
   getPharmacySafety: (orderId: string) => request<PharmacySafety>(`pharmacy/${orderId}/safety`),
   savePharmacyReview: (orderId: string, payload: { decision: 'approved' | 'override' | 'rejected'; note: string }) => request<Record<string, unknown>>(`pharmacy/${orderId}/review`, { method: 'POST', body: JSON.stringify(payload) }),
   getAdminOverview: () => request<AdminOverview>('admin/overview'),

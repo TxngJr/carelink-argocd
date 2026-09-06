@@ -6,18 +6,18 @@ describe('Infusion Lounge permissions', () => {
     expect(canCreateInfusionOrder(role)).toBe(true)
   })
 
-  it.each(['infusion_staff', 'manager', 'admin', 'chemo_staff'] as const)('allows %s to operate sessions', (role) => {
+  it.each(['infusion_staff', 'admin', 'chemo_staff'] as const)('allows %s to operate sessions', (role) => {
     expect(canOperateInfusion(role)).toBe(true)
   })
 
-  it('limits chair and template settings to manager and admin', () => {
-    expect(canConfigureInfusion('manager')).toBe(true)
+  it('limits chair and template settings to admin only', () => {
+    expect(canConfigureInfusion('manager')).toBe(false)
     expect(canConfigureInfusion('admin')).toBe(true)
     expect(canConfigureInfusion('infusion_staff')).toBe(false)
     expect(canConfigureInfusion('doctor')).toBe(false)
   })
 
-  it.each(['nurse', 'registration', 'vitals_staff', 'lab_staff', 'pharmacy_staff', 'patient'] as const)('denies unrelated role %s', (role) => {
+  it.each(['manager', 'operations', 'nurse', 'registration', 'vitals_staff', 'lab_staff', 'pharmacy_staff', 'patient'] as const)('denies unrelated role %s', (role) => {
     expect(canOperateInfusion(role)).toBe(false)
     expect(canConfigureInfusion(role)).toBe(false)
     expect(canCreateInfusionOrder(role)).toBe(false)
