@@ -17,9 +17,12 @@ describe('API RBAC', () => {
     expect(staffApiAllowed('doctor', 'POST', ['nurse', 'appointment-requests', 'a1', 'confirm-checkin'])).toBe(false)
   })
 
-  it('จำกัด operational API ให้ manager/operations และห้ามจัดคิว clinical station', () => {
+  it('จำกัด operational API ให้ manager/operations และให้ patient directory เป็น read-only', () => {
     expect(staffApiAllowed('manager', 'GET', ['operations', 'snapshot'])).toBe(true)
     expect(staffApiAllowed('operations', 'GET', ['map', 'overview'])).toBe(true)
+    expect(staffApiAllowed('manager', 'GET', ['registration', 'patients'])).toBe(true)
+    expect(staffApiAllowed('operations', 'GET', ['registration', 'patients'])).toBe(true)
+    expect(staffApiAllowed('manager', 'POST', ['registration', 'patients'])).toBe(false)
     expect(staffApiAllowed('doctor', 'GET', ['operations', 'snapshot'])).toBe(false)
     expect(staffApiAllowed('manager', 'POST', ['stations', 'MHT', 'call-next'])).toBe(false)
   })
