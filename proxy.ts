@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { SESSION_COOKIE, verifySessionToken } from '@/lib/server/auth'
-import { STAFF_ROUTE_ACCESS } from '@/lib/access-control'
+import { roleHomePath, STAFF_ROUTE_ACCESS } from '@/lib/access-control'
 
 export async function proxy(request: NextRequest) {
   const rule = STAFF_ROUTE_ACCESS.find((item) => request.nextUrl.pathname === item.prefix || request.nextUrl.pathname.startsWith(`${item.prefix}/`))
@@ -13,7 +13,7 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(login)
   }
   if (!rule.roles.includes(session.role) && session.role !== 'admin') {
-    const home = new URL('/', request.url)
+    const home = new URL(roleHomePath(session.role), request.url)
     home.searchParams.set('ไม่อนุญาต', '1')
     return NextResponse.redirect(home)
   }
@@ -22,13 +22,16 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
+    '/admin/:path*',
     '/operations/:path*',
     '/map/:path*',
+    '/appointments/:path*',
     '/registration/:path*',
     '/vitals/:path*',
     '/intake/:path*',
     '/physician/:path*',
     '/lab/:path*',
+    '/imaging/:path*',
     '/pharmacy/:path*',
     '/infusion/:path*',
   ],
