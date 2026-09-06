@@ -45,6 +45,7 @@ function orderRouteProblem(orders: OrderItem[], route: string[]) {
 export default function PhysicianPage() {
   const [encounterId, setEncounterId] = useState('')
   const [encounter, setEncounter] = useState<Encounter | null>(null)
+  const [savedEncounterId, setSavedEncounterId] = useState('')
   const [subjective, setSubjective] = useState('')
   const [objective, setObjective] = useState('')
   const [assessment, setAssessment] = useState('')
@@ -78,7 +79,27 @@ export default function PhysicianPage() {
       .catch(() => setMessage('ไม่สามารถโหลดรายการบริการ Infusion ได้ กรุณาลองใหม่'))
   }, [])
 
+  function resetEncounterDraft() {
+    setSavedEncounterId('')
+    setSubjective('')
+    setObjective('')
+    setAssessment('')
+    setPlan('')
+    setIcd10('C50.9')
+    setOrders([])
+    setOrderType('medication')
+    setOrderName('')
+    setOrderDose('')
+    setOrderFreq('1x1 หลังอาหาร')
+    setOrderQty(1)
+    setInfusionPlannedFor('')
+    setInfusionDuration('')
+    setSelectedRoute([])
+    setCandidateStation(routeOptions[0] || 'LAB')
+  }
+
   function addOrder() {
+    if (savedEncounterId === encounterId && encounterId) return
     const template = infusionTemplates.find((item) => item.id === infusionTemplateId)
     const resolvedName = orderType === 'infusion' ? template?.name : orderName.trim()
     if (!resolvedName || (orderType === 'infusion' && !template)) {
@@ -117,6 +138,7 @@ export default function PhysicianPage() {
   }
 
   function removeOrder(id: string) {
+    if (savedEncounterId === encounterId && encounterId) return
     const remaining = orders.filter((order) => order.id !== id)
     setOrders(remaining)
     setSelectedRoute((route) => {
@@ -129,12 +151,14 @@ export default function PhysicianPage() {
   }
 
   function addRouteStation() {
+    if (savedEncounterId === encounterId && encounterId) return
     if (!selectedRoute.includes(candidateStation)) {
       setSelectedRoute((prev) => [...prev, candidateStation])
     }
   }
 
   function removeRouteStation(code: string) {
+    if (savedEncounterId === encounterId && encounterId) return
     setSelectedRoute((prev) => prev.filter((item) => item !== code))
   }
 
@@ -142,6 +166,10 @@ export default function PhysicianPage() {
     event.preventDefault()
     if (!encounterId) {
       setMessage('กรุณาเลือกผู้ป่วยจากคิวห้องตรวจด้านล่าง')
+      return
+    }
+    if (savedEncounterId === encounterId) {
+      setMessage('เคสนี้บันทึกแล้ว กรุณากดเสร็จที่คิวห้องตรวจหรือเลือกผู้ป่วยคนถัดไป')
       return
     }
 
@@ -175,7 +203,8 @@ export default function PhysicianPage() {
       }
 
       await clientApi.setDoctorRoute(encounterId, fullRoute)
-      setMessage('บันทึกผลการตรวจ สั่งการรักษา และกำหนดเส้นทางสำเร็จ')
+      setSavedEncounterId(encounterId)
+      setMessage('บันทึกผลการตรวจ สั่งการรักษา และกำหนดเส้นทางสำเร็จ กรุณากดเสร็จที่คิวห้องตรวจเพื่อส่งผู้ป่วยต่อ')
     } catch (cause) {
       setMessage(cause instanceof Error ? cause.message : 'บันทึกไม่สำเร็จ')
     } finally {
@@ -198,6 +227,7 @@ export default function PhysicianPage() {
     try {
       setMessage('')
       const detail = await clientApi.getEncounterDetail(id)
+      if (id !== encounterId) resetEncounterDraft()
       setEncounterId(id)
       setEncounter(detail)
       window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -207,6 +237,7 @@ export default function PhysicianPage() {
   }
 
   const routeProblem = orderRouteProblem(orders, selectedRoute)
+  const saved = Boolean(encounterId && savedEncounterId === encounterId)
 
   return (
     <StaffShell role="doctor" displayName="นพ. วรเมธ สถิตย์ธรรม (อายุรกรรมมะเร็ง)">
@@ -225,27 +256,27 @@ export default function PhysicianPage() {
               <h3>บันทึกการตรวจและวินิจฉัย (Clinical Consultation Note)</h3>
             </div>
 
-            <div className="inline-alert" role="status">{encounter ? <><strong>{encounter.patient?.display_name || 'ผู้ป่วย'} · HN {encounter.patient?.hn || '—'}</strong><br />คิว {encounter.current_queue_no} · {encounter.current_station}</> : 'เลือกผู้ป่วยจากคิวห้องตรวจด้านล่างก่อนบันทึก'}</div>
+            <div className="inline-alert" role="status">{encounter ? <><strong>{encounter.patient?.display_name || 'ผู้ป่วย'} · HN {encounter.patient?.hn || '—'}</strong><br />คิว {encounter.current_queue_no} · {encounter.current_station}{saved ? ' · บันทึกการตรวจแล้ว' : ''}</> : 'เลือกผู้ป่วยจากคิวห้องตรวจด้านล่างก่อนบันทึก'}</div>
 
             <div className="form-two">
               <label>
                 <span>Subjective (อาการและประวัติจากผู้ป่วย)</span>
-                <textarea rows={2} value={subjective} onChange={(e) => setSubjective(e.target.value)} placeholder="อาการสำคัญ ประวัติอาการปวด การรับประทานอาหาร" />
+                <textarea rows={2} value={subjective} onChange={(e) => setSubjective(e.target.value)} placeholder="อาการสำคัญ ประวัติอาการปวด การรับประทานอาหาร" disabled={saved} />
               </label>
               <label>
                 <span>Objective (ผลการตรวจร่างกายและสัญญาณชีพ)</span>
-                <textarea rows={2} value={objective} onChange={(e) => setObjective(e.target.value)} placeholder="Physical Exam findings, BP, HR, Vitals" />
+                <textarea rows={2} value={objective} onChange={(e) => setObjective(e.target.value)} placeholder="Physical Exam findings, BP, HR, Vitals" disabled={saved} />
               </label>
             </div>
 
             <div className="form-two">
               <label>
                 <span>Assessment & วินิจฉัยโรค</span>
-                <textarea rows={2} value={assessment} onChange={(e) => setAssessment(e.target.value)} placeholder="การวินิจฉัย การประเมินระยะโรค" />
+                <textarea rows={2} value={assessment} onChange={(e) => setAssessment(e.target.value)} placeholder="การวินิจฉัย การประเมินระยะโรค" disabled={saved} />
               </label>
               <label>
                 <span>รหัสการวินิจฉัยโรค ICD-10</span>
-                <select value={icd10} onChange={(e) => setIcd10(e.target.value)}>
+                <select value={icd10} onChange={(e) => setIcd10(e.target.value)} disabled={saved}>
                   <option value="C50.9">C50.9 · มะเร็งเต้านม (Malignant neoplasm of breast)</option>
                   <option value="C34.9">C34.9 · มะเร็งปอด (Malignant neoplasm of bronchus/lung)</option>
                   <option value="C18.9">C18.9 · มะเร็งลำไส้ใหญ่ (Malignant neoplasm of colon)</option>
@@ -257,7 +288,7 @@ export default function PhysicianPage() {
 
             <label>
               <span>Plan (แผนการรักษาและคำแนะนำ)</span>
-              <textarea rows={2} value={plan} onChange={(e) => setPlan(e.target.value)} placeholder="แผนการให้ยา การตรวจติดตาม หรือนัดหมายครั้งถัดไป" />
+              <textarea rows={2} value={plan} onChange={(e) => setPlan(e.target.value)} placeholder="แผนการให้ยา การตรวจติดตาม หรือนัดหมายครั้งถัดไป" disabled={saved} />
             </label>
 
             <div style={{ borderTop: '1px solid var(--line)', paddingTop: 14 }}>
@@ -266,41 +297,33 @@ export default function PhysicianPage() {
               <p style={{ marginTop: 0, fontSize: '.82rem', color: 'var(--muted)' }}>เมื่อเพิ่มคำสั่ง ระบบจะเพิ่ม Station ที่เกี่ยวข้องในเส้นทางให้อัตโนมัติ</p>
 
               <div className="order-entry-grid">
-                <select aria-label="ประเภทคำสั่งการรักษา" value={orderType} onChange={(e) => setOrderType(e.target.value as SupportedOrderType)}>
+                <select aria-label="ประเภทคำสั่งการรักษา" value={orderType} onChange={(e) => setOrderType(e.target.value as SupportedOrderType)} disabled={saved}>
                   <option value="medication">ยา (Medication) → PD</option>
                   <option value="lab">ตรวจแล็บ (Lab) → LAB</option>
                   <option value="infusion">สารน้ำ / ยาทางหลอดเลือด / เคมีบำบัด → INFUSION</option>
                 </select>
                 {orderType === 'infusion' ? (
-                  <select aria-label="รูปแบบบริการ Infusion" value={infusionTemplateId} onChange={(e) => setInfusionTemplateId(e.target.value)}>
+                  <select aria-label="รูปแบบบริการ Infusion" value={infusionTemplateId} onChange={(e) => setInfusionTemplateId(e.target.value)} disabled={saved}>
                     {infusionTemplates.length === 0 && <option value="">ยังไม่มี Template ที่พร้อมใช้งาน</option>}
-                    {infusionTemplates.map((template) => (
-                      <option key={template.id} value={template.id}>{template.name}{template.is_demo ? ' · ตัวอย่าง' : ''}</option>
-                    ))}
+                    {infusionTemplates.map((template) => <option key={template.id} value={template.id}>{template.name}{template.is_demo ? ' · ตัวอย่าง' : ''}</option>)}
                   </select>
                 ) : (
-                  <input aria-label="ชื่อรายการ" value={orderName} onChange={(e) => setOrderName(e.target.value)} placeholder="เช่น Paracetamol 500mg หรือ CBC" />
+                  <input aria-label="ชื่อรายการ" value={orderName} onChange={(e) => setOrderName(e.target.value)} placeholder="เช่น Paracetamol 500mg หรือ CBC" disabled={saved} />
                 )}
-                <input aria-label="จำนวน" type="number" min="1" step="1" value={orderQty} onChange={(e) => setOrderQty(Number(e.target.value))} placeholder="จำนวน" />
-                <button type="button" className="button secondary" onClick={addOrder}><Plus size={16} aria-hidden="true" /> เพิ่ม</button>
+                <input aria-label="จำนวน" type="number" min="1" step="1" value={orderQty} onChange={(e) => setOrderQty(Number(e.target.value))} placeholder="จำนวน" disabled={saved} />
+                <button type="button" className="button secondary" onClick={addOrder} disabled={saved}><Plus size={16} aria-hidden="true" /> เพิ่ม</button>
               </div>
 
               {orderType === 'infusion' && (
                 <div className="form-two infusion-order-options">
-                  <label>
-                    <span>วันที่วางแผน (ไม่ใช่การจองเก้าอี้)</span>
-                    <input type="datetime-local" value={infusionPlannedFor} onChange={(e) => setInfusionPlannedFor(e.target.value)} />
-                  </label>
-                  <label>
-                    <span>เวลารวมเฉพาะราย (นาที) · ไม่บังคับ</span>
-                    <input type="number" min="1" max="1440" value={infusionDuration} onChange={(e) => setInfusionDuration(e.target.value)} placeholder="ใช้เวลาจาก Template หากไม่ระบุ" />
-                  </label>
+                  <label><span>วันที่วางแผน (ไม่ใช่การจองเก้าอี้)</span><input type="datetime-local" value={infusionPlannedFor} onChange={(e) => setInfusionPlannedFor(e.target.value)} disabled={saved} /></label>
+                  <label><span>เวลารวมเฉพาะราย (นาที) · ไม่บังคับ</span><input type="number" min="1" max="1440" value={infusionDuration} onChange={(e) => setInfusionDuration(e.target.value)} placeholder="ใช้เวลาจาก Template หากไม่ระบุ" disabled={saved} /></label>
                 </div>
               )}
               {orderType === 'medication' && (
                 <div className="form-two infusion-order-options">
-                  <label><span>ขนาดยา</span><input value={orderDose} onChange={(event) => setOrderDose(event.target.value)} placeholder="เช่น 500 mg" /></label>
-                  <label><span>ความถี่ / วิธีใช้</span><input value={orderFreq} onChange={(event) => setOrderFreq(event.target.value)} placeholder="เช่น วันละ 1 ครั้ง หลังอาหาร" /></label>
+                  <label><span>ขนาดยา</span><input value={orderDose} onChange={(event) => setOrderDose(event.target.value)} placeholder="เช่น 500 mg" disabled={saved} /></label>
+                  <label><span>ความถี่ / วิธีใช้</span><input value={orderFreq} onChange={(event) => setOrderFreq(event.target.value)} placeholder="เช่น วันละ 1 ครั้ง หลังอาหาร" disabled={saved} /></label>
                 </div>
               )}
 
@@ -309,7 +332,7 @@ export default function PhysicianPage() {
                   {orders.map((order) => (
                     <div key={order.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: '#f8faf9', borderRadius: 8, fontSize: '.82rem' }}>
                       <div><strong>[{order.type}] {order.name}</strong> (จำนวน: {order.quantity}) · ไป {order.target_station}</div>
-                      <button type="button" aria-label={`ลบคำสั่ง ${order.name}`} onClick={() => removeOrder(order.id)} style={{ border: 0, background: 'transparent', color: 'var(--danger)' }}><Trash2 size={15} aria-hidden="true" /></button>
+                      <button type="button" aria-label={`ลบคำสั่ง ${order.name}`} onClick={() => removeOrder(order.id)} disabled={saved} style={{ border: 0, background: 'transparent', color: 'var(--danger)' }}><Trash2 size={15} aria-hidden="true" /></button>
                     </div>
                   ))}
                 </div>
@@ -321,11 +344,11 @@ export default function PhysicianPage() {
               <h4 style={{ margin: '4px 0 8px' }}>เส้นทางหลังออกจากห้องแพทย์</h4>
               <p style={{ marginTop: 0, fontSize: '.82rem', color: 'var(--muted)' }}>รุ่นสาธิตเปิดใช้งานเฉพาะ Station ที่มีเจ้าหน้าที่รับงานครบวงจร และ Visit จะจบที่ DH · กลับบ้าน</p>
               <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
-                <select value={candidateStation} onChange={(e) => setCandidateStation(e.target.value)} style={{ maxWidth: 300 }}>
+                <select value={candidateStation} onChange={(e) => setCandidateStation(e.target.value)} style={{ maxWidth: 300 }} disabled={saved}>
                   {routeOptions.map((code) => <option key={code} value={code}>{code} · {stationMap.get(code)?.name}</option>)}
                 </select>
-                <button type="button" className="button secondary" onClick={addRouteStation}>เพิ่ม Station</button>
-                <button type="button" className="button ghost" onClick={() => setSelectedRoute([])}>ล้าง Station เพิ่มเติม</button>
+                <button type="button" className="button secondary" onClick={addRouteStation} disabled={saved}>เพิ่ม Station</button>
+                <button type="button" className="button ghost" onClick={() => setSelectedRoute([])} disabled={saved}>ล้าง Station เพิ่มเติม</button>
               </div>
 
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
@@ -333,18 +356,18 @@ export default function PhysicianPage() {
                 {selectedRoute.map((code, index) => (
                   <span key={code} className="status-pill flowing" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px' }}>
                     {index + 1}. {code} ({stationMap.get(code)?.name})
-                    <button type="button" aria-label={`นำ ${code} ออกจากเส้นทาง`} onClick={() => removeRouteStation(code)} style={{ border: 0, background: 'transparent', color: 'inherit', padding: 0 }}><X size={12} aria-hidden="true" /></button>
+                    <button type="button" aria-label={`นำ ${code} ออกจากเส้นทาง`} onClick={() => removeRouteStation(code)} disabled={saved} style={{ border: 0, background: 'transparent', color: 'inherit', padding: 0 }}><X size={12} aria-hidden="true" /></button>
                   </span>
                 ))}
                 <span className="status-pill">→ DH · กลับบ้าน</span>
               </div>
-              {routeProblem && <div className="inline-alert warning" role="status">{routeProblem}</div>}
+              {routeProblem && !saved && <div className="inline-alert warning" role="status">{routeProblem}</div>}
             </div>
 
-            {message && <div className={`inline-alert ${message.includes('สำเร็จ') ? 'success' : 'danger'}`}>{message}</div>}
+            {message && <div className={`inline-alert ${message.includes('สำเร็จ') || message.includes('บันทึกแล้ว') ? 'success' : 'danger'}`}>{message}</div>}
 
-            <button className="button primary large" disabled={busy || Boolean(routeProblem)}>
-              {busy ? 'กำลังบันทึก…' : 'บันทึกประวัติการตรวจและยืนยันเส้นทาง'}
+            <button className="button primary large" disabled={busy || Boolean(routeProblem) || saved}>
+              {busy ? 'กำลังบันทึก…' : saved ? 'บันทึกเคสนี้แล้ว · กรุณากดเสร็จที่คิวห้องตรวจ' : 'บันทึกประวัติการตรวจและยืนยันเส้นทาง'}
             </button>
           </form>
 
