@@ -101,6 +101,16 @@ for (const roleCase of CASES) {
 }
 
 test('legacy aliases ใช้ guard เดียวกับ workspace ปัจจุบัน', async ({ page }) => {
+  await developmentLogin(page, 'nurse')
+  await page.goto('/nurse')
+  await expect.poll(() => new URL(page.url()).pathname).toBe('/intake')
+
+  await page.context().clearCookies()
+  await developmentLogin(page, 'doctor')
+  await page.goto('/nurse')
+  await expect.poll(() => new URL(page.url()).pathname).toBe('/physician')
+
+  await page.context().clearCookies()
   await developmentLogin(page, 'doctor')
   await page.goto('/doctor')
   await expect.poll(() => new URL(page.url()).pathname).toBe('/physician')
