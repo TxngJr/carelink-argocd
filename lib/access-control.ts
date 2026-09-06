@@ -14,10 +14,10 @@ export const STAFF_ROUTE_ACCESS: Array<{ prefix: string; roles: Role[] }> = [
   { prefix: '/registration', roles: ['admin', 'manager', 'registration', 'nurse'] },
   { prefix: '/vitals', roles: ['admin', 'manager', 'vitals_staff', 'nurse'] },
   { prefix: '/intake', roles: ['admin', 'manager', 'nurse'] },
-  { prefix: '/physician', roles: ['admin', 'manager', 'doctor', 'physician'] },
-  { prefix: '/lab', roles: ['admin', 'manager', 'doctor', 'physician', 'lab_staff'] },
+  { prefix: '/physician', roles: ['admin', 'doctor', 'physician'] },
+  { prefix: '/lab', roles: ['admin', 'lab_staff'] },
   { prefix: '/imaging', roles: ['admin', 'manager', 'operations', 'nurse', 'doctor', 'physician'] },
-  { prefix: '/pharmacy', roles: ['admin', 'manager', 'pharmacy_staff'] },
+  { prefix: '/pharmacy', roles: ['admin', 'pharmacy_staff'] },
   { prefix: '/infusion', roles: ['admin', 'manager', 'infusion_staff', 'chemo_staff'] },
 ]
 
