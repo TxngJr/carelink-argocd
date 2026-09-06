@@ -125,7 +125,7 @@ export function DoctorAppointmentWorkspace() {
   }, [])
 
   useEffect(() => {
-    void load()
+    const initial = window.setTimeout(() => void load(), 0)
     const timer = window.setInterval(() => void load(true), 10_000)
     const source = new EventSource('/api/realtime/stream?scope=staff')
     const refresh = () => void load(true)
@@ -133,6 +133,7 @@ export function DoctorAppointmentWorkspace() {
       source.addEventListener(eventName, refresh)
     }
     return () => {
+      window.clearTimeout(initial)
       window.clearInterval(timer)
       source.close()
     }
@@ -194,7 +195,7 @@ export function DoctorAppointmentWorkspace() {
         <div className="workspace-card" style={{ padding: 36, textAlign: 'center', display: 'grid', gap: 8, justifyItems: 'center' }}>
           <Stethoscope size={30} />
           <strong>{search ? 'ไม่พบนัดที่ค้นหา' : 'ไม่มีนัดรอแพทย์ยืนยัน'}</strong>
-          <span>{search ? 'ลองเปลี่ยนคำค้นหา' : 'เมื่อนางพยาบาลเสนอวันนัด รายการจะปรากฏที่หน้านี้'}</span>
+          <span>{search ? 'ลองเปลี่ยนคำค้นหา' : 'เมื่อพยาบาลเสนอวันนัด รายการจะปรากฏที่หน้านี้'}</span>
         </div>
       ) : (
         <div style={{ display: 'grid', gap: 16 }}>
