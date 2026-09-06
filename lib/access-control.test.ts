@@ -77,13 +77,15 @@ describe('ตารางสิทธิ์ CareLink แบบแยกบทบ
     expect(OPERATIONS_MUTATION_ROLES).toEqual(['admin', 'manager', 'operations'])
   })
 
-  it('realtime channel ไม่ข้ามขอบเขตบทบาท', () => {
+  it('realtime channel ไม่ข้ามขอบเขตบทบาท แต่ Operations มองเห็น station feed เพื่อทำ live map', () => {
     expect(staffRealtimeChannelAllowed('nurse', 'patient:abc')).toBe(false)
     expect(staffRealtimeChannelAllowed('admin', 'tv')).toBe(false)
     expect(staffRealtimeChannelAllowed('lab_staff', 'station:LAB')).toBe(true)
     expect(staffRealtimeChannelAllowed('lab_staff', 'station:PD')).toBe(false)
     expect(staffRealtimeChannelAllowed('nurse', 'station:NPR')).toBe(false)
     expect(staffRealtimeChannelAllowed('nurse', 'station:MHT')).toBe(true)
+    expect(staffRealtimeChannelAllowed('manager', 'station:LAB')).toBe(true)
+    expect(staffRealtimeChannelAllowed('operations', 'station:PC')).toBe(true)
     expect(staffRealtimeChannelAllowed('manager', 'appointments')).toBe(false)
     expect(staffRealtimeChannelAllowed('doctor', 'appointments')).toBe(true)
     expect(staffRealtimeChannelAllowed('chemo_staff', 'orders')).toBe(true)
