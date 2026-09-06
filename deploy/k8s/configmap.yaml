@@ -5,7 +5,8 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "-1"
 data:
-  MONGO_URI: mongodb://mongo-0.mongo:27017/?replicaSet=rs0
+  # MONGO_URI is intentionally kept out of this public ConfigMap. The
+  # Deployment reads it from the carelink-atlas Secret instead.
   DB_NAME: carelink
   APP_ENV: public_demo
   NEXT_PUBLIC_APP_NAME: CareLink
