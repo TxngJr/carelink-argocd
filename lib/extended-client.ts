@@ -54,11 +54,60 @@ export type ImagingOrder = {
   created_at?: string
 }
 
+export type ClinicalPatient = {
+  id?: string
+  hn?: string
+  display_name?: string
+  phone?: string
+  gender?: string
+  birth_date?: string
+  insurance_type?: string
+  province?: string
+  allergies?: string[]
+  chronic_conditions?: string[]
+}
+
+export type ClinicalVitals = {
+  sbp?: number
+  dbp?: number
+  pulse?: number
+  temperature?: number
+  respiratory_rate?: number
+  spo2?: number
+  weight_kg?: number
+  height_cm?: number
+  bmi?: number
+  pain_score?: number
+  consciousness?: string
+  triage_level?: string
+  notes?: string
+  recorded_at?: string
+}
+
+export type ClinicalPrevisit = {
+  chief_complaint?: string
+  allergies?: string[]
+  current_medications?: string[]
+  herbal_medications?: string[]
+  chronic_conditions?: string[] | string
+  food_intake?: string
+  nausea_vomiting?: string
+  fever_history?: string
+  fatigue?: string
+  address?: string
+  province?: string
+  preferred_language?: string
+  caregiver_name?: string
+  caregiver_phone?: string
+  special_needs?: string
+  [key: string]: unknown
+}
+
 export type ClinicalContext = {
   encounter: Record<string, unknown> | null
-  patient: Record<string, unknown> | null
-  vitals: Record<string, unknown> | null
-  previsit: Record<string, unknown> | null
+  patient: ClinicalPatient | null
+  vitals: ClinicalVitals | null
+  previsit: ClinicalPrevisit | null
   assessment: Record<string, unknown> | null
   note: Record<string, unknown> | null
   orders: Array<Record<string, unknown>>
