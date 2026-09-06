@@ -2,12 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { clientApi } from '@/lib/client'
-import { PC_CODES, STATIONS } from '@/lib/stations'
+import { NURSE_QUEUE_CODES, PC_CODES, STATIONS } from '@/lib/stations'
 import type { QueueData, QueueItem } from '@/lib/types'
 
 const STATUS_LABEL: Record<string, string> = {
   waiting: 'รอเรียก', called: 'เรียกแล้ว', in_progress: 'กำลังรับบริการ', no_show: 'ไม่พบผู้ป่วย', completed: 'เสร็จแล้ว',
 }
+
+const EMPTY_QUEUE: QueueData = { items: [], now_serving: [], counts: { waiting: 0, called: 0, in_progress: 0 } }
 
 type Props = {
   role: 'nurse' | 'doctor'
@@ -18,14 +20,19 @@ type Props = {
 export function QueueWorkspace({ role, stationCodes, onSelectEncounter }: Props) {
   const allowed = useMemo(() => STATIONS.filter((station) => stationCodes
     ? stationCodes.includes(station.code)
-    : role === 'doctor' ? PC_CODES.has(station.code) : !PC_CODES.has(station.code)), [role, stationCodes])
-  const [station, setStation] = useState(allowed[0]?.code || 'NPR')
-  const [data, setData] = useState<QueueData>({ items: [], now_serving: [], counts: { waiting: 0, called: 0, in_progress: 0 } })
+    : role === 'doctor' ? PC_CODES.has(station.code) : NURSE_QUEUE_CODES.has(station.code)), [role, stationCodes])
+  const [station, setStation] = useState(allowed[0]?.code || '')
+  const [data, setData] = useState<QueueData>(EMPTY_QUEUE)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
 
   const load = useCallback(async (quiet = false) => {
+    if (!station) {
+      setData(EMPTY_QUEUE)
+      setLoading(false)
+      return
+    }
     if (!quiet) setLoading(true)
     try {
       const next = await clientApi.getStationQueue(station) as QueueData
@@ -39,23 +46,26 @@ export function QueueWorkspace({ role, stationCodes, onSelectEncounter }: Props)
   }, [station])
 
   useEffect(() => {
+    if (!station) return
     const initial = window.setTimeout(() => void load(), 0)
     const timer = window.setInterval(() => void load(true), 10_000)
     return () => {
       window.clearTimeout(initial)
       window.clearInterval(timer)
     }
-  }, [load])
+  }, [load, station])
 
   useEffect(() => {
+    if (!station) return
     const source = new EventSource('/api/realtime/stream?scope=staff')
     const refresh = () => void load(true)
     const events = ['queue_updated', 'queue_called', 'queue_started', 'queue_recalled', 'queue_skipped', 'queue_requeued', 'encounter_moved']
     events.forEach((name) => source.addEventListener(name, refresh))
     return () => source.close()
-  }, [load])
+  }, [load, station])
 
   async function action(name: 'call' | 'start' | 'complete' | 'recall' | 'skip' | 'requeue', item?: QueueItem) {
+    if (!station) return
     if (name === 'complete' && item && !window.confirm(`ยืนยันว่า ${item.queue_no} เสร็จที่ ${station} และส่งไป Station ถัดไป?`)) return
     const key = item?.id || name
     setBusy(key)
@@ -73,6 +83,9 @@ export function QueueWorkspace({ role, stationCodes, onSelectEncounter }: Props)
 
   const selected = allowed.find((item) => item.code === station)
   const serving = data.now_serving?.[0]
+  const scopeLabel = stationCodes?.length
+    ? `เฉพาะ ${allowed.map((item) => item.code).join(' · ')}`
+    : role === 'doctor' ? 'เฉพาะห้องตรวจ PC–PC4' : 'เฉพาะ NPR · EV · VM · MHT ตามสิทธิ์พยาบาล'
 
   return (
     <section className="workspace-card queue-workspace">
@@ -80,26 +93,26 @@ export function QueueWorkspace({ role, stationCodes, onSelectEncounter }: Props)
         <div>
           <span className="eyebrow">QUEUE CONTROL</span>
           <h2>จัดการคิว Station</h2>
-          <p>{role === 'doctor' ? 'เฉพาะห้องตรวจ PC–PC4' : 'Station การบริการทั้งหมด ยกเว้นห้องแพทย์'}</p>
+          <p>{scopeLabel}</p>
         </div>
         <div className="queue-controls">
-          <select value={station} onChange={(e) => setStation(e.target.value)} aria-label="เลือก Station">
+          <select value={station} onChange={(e) => setStation(e.target.value)} aria-label="เลือก Station" disabled={allowed.length <= 1}>
             {allowed.map((item) => <option key={item.code} value={item.code}>{item.code} · {item.name}</option>)}
           </select>
-          <button className="button secondary" onClick={() => void load()} disabled={loading}>รีเฟรช</button>
-          <button className="button primary" onClick={() => void action('call')} disabled={Boolean(busy) || !data.items.some((item) => item.status === 'waiting')}>เรียกคิวถัดไป</button>
+          <button className="button secondary" onClick={() => void load()} disabled={loading || !station}>รีเฟรช</button>
+          <button className="button primary" onClick={() => void action('call')} disabled={Boolean(busy) || !station || !data.items.some((item) => item.status === 'waiting')}>เรียกคิวถัดไป</button>
         </div>
       </div>
 
       <div className="queue-summary-grid">
-        <div className="metric-card highlight"><span>กำลังเรียก / บริการ</span><strong>{serving?.queue_no || '—'}</strong><small>{selected?.name}</small></div>
+        <div className="metric-card highlight"><span>กำลังเรียก / บริการ</span><strong>{serving?.queue_no || '—'}</strong><small>{selected?.name || 'ไม่มี Station ที่เปิดใช้งาน'}</small></div>
         <div className="metric-card"><span>รอเรียก</span><strong>{data.counts.waiting}</strong><small>คิว</small></div>
         <div className="metric-card"><span>เรียกแล้ว</span><strong>{data.counts.called}</strong><small>คิว</small></div>
         <div className="metric-card"><span>กำลังรับบริการ</span><strong>{data.counts.in_progress}</strong><small>คิว</small></div>
       </div>
 
       {error && <div className="inline-alert danger">{error}</div>}
-      {loading ? <div className="empty-state">กำลังโหลดคิว…</div> : data.items.length === 0 ? <div className="empty-state">ไม่มีคิวใน Station นี้</div> : (
+      {!station ? <div className="empty-state">ไม่มี Station ที่ role นี้สามารถจัดการได้</div> : loading ? <div className="empty-state">กำลังโหลดคิว…</div> : data.items.length === 0 ? <div className="empty-state">ไม่มีคิวใน Station นี้</div> : (
         <div className="queue-list">
           {data.items.map((item) => (
             <article className="queue-row" key={item.id}>

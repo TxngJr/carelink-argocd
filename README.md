@@ -19,8 +19,8 @@ CareLink เป็น educational prototype สำหรับจัดการ
 
 | Workspace | URL | ผู้ใช้งานหลัก |
 |---|---|---|
-| Operations | `/operations` | Manager / Admin |
-| Schedule | `/operations/schedule` | Manager / Operations |
+| Operations | `/operations` | Operations / Manager / Admin |
+| Schedule | `/operations/schedule` | Operations / Manager |
 | Registration | `/registration` | Registration / Nurse |
 | Vitals | `/vitals` | Vitals staff / Nurse |
 | Intake | `/intake` | Nurse |
@@ -30,6 +30,8 @@ CareLink เป็น educational prototype สำหรับจัดการ
 | Infusion Lounge | `/infusion` | Infusion staff / Manager / Admin |
 
 `/nurse` และ `/doctor` redirect ไป workspace หลัก ส่วน `/chemo` redirect ไป `/infusion` เพื่อรองรับ bookmark เดิม ระบบฉายแสงไม่มี route, UI หรือ API ที่สร้างข้อมูลใหม่แล้ว แต่ collection `radiation_sessions` จะไม่ถูกลบ
+
+เส้นทางใหม่ที่แพทย์สร้างได้ใน public demo จำกัดไว้ที่ Station ที่มี operator workspace ครบวงจร ได้แก่ `LAB`, `LABC`, `INFUSION` และ `PD` ก่อนจบที่ `DH` เพื่อป้องกัน journey ค้างที่จุดอ้างอิงบนแผนผังซึ่งยังไม่มีหน้าปฏิบัติงาน ส่วน `DH` และ tail `HA → IPW` เป็น terminal semantics ที่ระบบปิดอัตโนมัติหลัง Station สุดท้ายที่มีเจ้าหน้าที่ทำงานเสร็จ จึงไม่ต้องมีเจ้าหน้าที่มาปิดคิว terminal แยก
 
 ## Infusion Lounge
 
@@ -51,7 +53,9 @@ Template สาธิต:
 
 ## Accounts
 
-ฐานข้อมูลว่างจะสร้างบัญชีสาธิต 36 บัญชี (9 บทบาท บทบาทละ 4 บัญชี) พร้อม one-click login บนหน้าเจ้าหน้าที่ รหัสผ่านสำหรับทดสอบคือ `password123` รายการจริงมาจาก `lib/development-accounts.ts` จึงไม่ต้องดูแลตัวเลขซ้ำใน UI หรือ README
+ฐานข้อมูลว่างจะสร้างบัญชีสาธิต **40 บัญชี (10 บทบาท บทบาทละ 4 บัญชี)** พร้อม one-click login บนหน้าเจ้าหน้าที่ รหัสผ่านสำหรับทดสอบคือ `password123` รายการจริงมาจาก `lib/development-accounts.ts` จึงไม่ต้องดูแลรายชื่อซ้ำใน UI หรือ README
+
+บทบาทที่มีบัญชีทดสอบ ได้แก่ Admin, Manager, Operations, Registration, Nurse, Vitals staff, Doctor, Lab staff, Pharmacy staff และ Infusion staff
 
 Role `chemo_staff` เดิมถูก migrate เป็น `infusion_staff` และ legacy session cookie จะถูก normalize ระหว่างเปลี่ยนผ่าน ส่วน `rt_staff` จะถูก deactivate
 
@@ -99,13 +103,15 @@ docker compose down
 unset JWT_SECRET
 ```
 
+E2E ครอบคลุมทั้ง public accessibility/kiosk, role-aware navbar/redirect และ physician → infusion journey จน `encounter`/appointment เป็น `completed` พร้อมตรวจว่าไม่มี `DH/HA/IPW` queue ค้าง
+
 - `GET /health/live` ตรวจ process ของ Next.js โดยไม่ผูกกับฐานข้อมูล
 - `GET /health/ready` ตรวจความพร้อมของ MongoDB
 - `GET /health` คงไว้เพื่อความเข้ากันได้และตรวจทั้ง application กับ MongoDB
 
 ## Deployment
 
-`deploy/k8s` ประกอบด้วย CareLink 2 replicas, MongoDB StatefulSet replica set, NetworkPolicy, PodDisruptionBudget และ MongoDB backup รายคืนบน PVC (เก็บประมาณ 7 วัน) ส่วน Argo CD sync จาก `deploy/k8s` บน branch `main` GitHub Actions จะตรวจ typecheck, lint แบบ zero-warning, unit tests, build, Kustomize render และ container live-health ก่อนสร้าง immutable image
+`deploy/k8s` ประกอบด้วย CareLink 2 replicas, MongoDB StatefulSet replica set, NetworkPolicy, PodDisruptionBudget และ MongoDB backup รายคืนบน PVC (เก็บประมาณ 7 วัน) ส่วน Argo CD sync จาก `deploy/k8s` บน branch `main` GitHub Actions จะตรวจ typecheck, lint แบบ zero-warning, unit tests, build, browser E2E, Kustomize render และ container live-health ก่อนสร้าง immutable image
 
 Public demo deploy ได้ครบจาก Git ด้วย Argo CD โดยตรง: `deploy/k8s/secret.yaml` มี `JWT_SECRET` และ `DEVELOPMENT_LOGIN_PASSWORD` แบบ plaintext สำหรับ sandbox นี้โดยเฉพาะ จึงไม่ต้องสร้าง Secret ภายนอกก่อน sync และเปิด automated prune/self-heal ไว้แล้ว เมื่อเปลี่ยนค่า Secret ให้เพิ่ม `carelink.dev/secret-revision` ใน `deploy/k8s/app.yaml` เพื่อ rollout pod ใหม่
 

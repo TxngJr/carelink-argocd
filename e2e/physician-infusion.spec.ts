@@ -9,7 +9,7 @@ async function data<T>(response: Awaited<ReturnType<APIRequestContext['get']>>) 
   return payload.data
 }
 
-test('แพทย์สั่ง Infusion จนเจ้าหน้าที่ปล่อยเก้าอี้', async ({ playwright, baseURL }) => {
+test('แพทย์สั่ง Infusion จน Visit เสร็จสมบูรณ์และไม่มีคิว terminal ค้าง', async ({ playwright, baseURL }) => {
   const api = await playwright.request.newContext({
     baseURL,
     extraHTTPHeaders: { Origin: baseURL || 'http://127.0.0.1:3000', 'Content-Type': 'application/json' },
@@ -79,7 +79,23 @@ test('แพทย์สั่ง Infusion จนเจ้าหน้าที�
     session = await post(`/infusion/sessions/${session.id}/complete-phase`, { version: session.version, reason: 'จบก่อนเวลาเพื่อทดสอบ E2E' })
   }
   await post(`/infusion/sessions/${session.id}/complete`, { version: session.version, reason: 'ยืนยันจบ journey E2E' })
+
   const finalBoard = await get<{ chairs: Array<{ id: string; session?: unknown }> }>('/infusion/board')
   expect(finalBoard.chairs.find((row) => row.id === chair.id)?.session).toBeUndefined()
+
+  const encounter = await get<{ status: string; current_station: string }>(`/encounters/${encounterId}`)
+  expect(encounter.status).toBe('completed')
+
+  await login('admin')
+  for (const terminal of ['DH', 'HA', 'IPW']) {
+    const queue = await get<{ items: Array<{ encounter_id: string }> }>(`/stations/${terminal}/queue`)
+    expect(queue.items.some((row) => row.encounter_id === encounterId), `มีคิว ${terminal} ค้างหลัง Visit จบ`).toBe(false)
+  }
+
+  await post('/mobile/auth/login', { username: phone, password })
+  const completedAppointment = await get<{ id: string; status: string }>('/mobile/appointment-requests/current')
+  expect(completedAppointment.id).toBe(appointment.id)
+  expect(completedAppointment.status).toBe('completed')
+
   await api.dispose()
 })

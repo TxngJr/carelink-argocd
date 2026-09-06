@@ -50,6 +50,20 @@ export const DEVELOPMENT_ROLE_DEFINITIONS: DevelopmentRoleDefinition[] = [
     ],
   },
   {
+    role: 'operations',
+    title: 'ศูนย์ปฏิบัติการ',
+    duty: 'ติดตามการไหลเวียนผู้ป่วย คอขวด ตารางเวลา และประสานทรัพยากรหน้างาน',
+    department: 'ศูนย์ปฏิบัติการ CareLink',
+    station_codes: ['*'],
+    permissions: ['dashboard.read', 'dashboard.manage', 'patients.read', 'flow.read', 'flow.manage', 'insights.read'],
+    users: [
+      { username: 'operations', display_name: 'ศูนย์ปฏิบัติการกลาง' },
+      { username: 'operations02', display_name: 'ธนกร ประสานคิว' },
+      { username: 'operations03', display_name: 'วิภาวี ติดตามการไหล' },
+      { username: 'operations04', display_name: 'อาทิตย์ จัดสรรทรัพยากร' },
+    ],
+  },
+  {
     role: 'registration',
     title: 'เจ้าหน้าที่ลงทะเบียน',
     duty: 'ค้นหาและลงทะเบียนผู้ป่วย ตรวจสอบสิทธิ์ และส่งต่อเข้าคิว',

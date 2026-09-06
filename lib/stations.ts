@@ -31,22 +31,22 @@ export const STATIONS: StationDefinition[] = [
   { code: 'HA', name: 'ประสานงานรับไว้รักษา', floor: 'ชั้น 1', room: 'ห้องส่งต่อ', averageServiceMin: 12, capacity: 6, category: 'admin', pos: [1280, 420], description: 'เตรียมเอกสารนอนโรงพยาบาล' },
   { code: 'DH', name: 'กลับบ้าน', floor: 'ชั้น 1', room: 'ทางออกหลัก', averageServiceMin: 3, capacity: 25, category: 'exit', pos: [1360, 320], description: 'เสร็จสิ้นกระบวนการบริการวันนี้' },
 
-  // Floor 2: Consultations & Imaging
+  // Floor 2: Consultations & reference locations shown on the operational map.
   { code: 'PC', name: 'ห้องตรวจแพทย์ 1', floor: 'ชั้น 2', room: 'ห้องตรวจ 201', averageServiceMin: 15, capacity: 6, category: 'clinical', pos: [530, 265], description: 'ตรวจวินิจฉัยและวางแผนการรักษา' },
   { code: 'PC2', name: 'ห้องตรวจแพทย์ 2', floor: 'ชั้น 2', room: 'ห้องตรวจ 202', averageServiceMin: 15, capacity: 6, category: 'clinical', pos: [530, 320], description: 'ตรวจวินิจฉัยและวางแผนการรักษา' },
   { code: 'PC3', name: 'ห้องตรวจแพทย์ 3', floor: 'ชั้น 2', room: 'ห้องตรวจ 203', averageServiceMin: 15, capacity: 6, category: 'clinical', pos: [530, 375], description: 'ตรวจวินิจฉัยและวางแผนการรักษา' },
   { code: 'PC4', name: 'ห้องตรวจแพทย์ 4', floor: 'ชั้น 2', room: 'ห้องตรวจ 204', averageServiceMin: 15, capacity: 6, category: 'clinical', pos: [530, 430], description: 'ตรวจวินิจฉัยและวางแผนการรักษา' },
-  { code: 'XR', name: 'รังสีวินิจฉัย (X-Ray)', floor: 'ชั้น 2', room: 'ห้องรังสี 210', averageServiceMin: 15, capacity: 8, category: 'imaging', pos: [650, 70], description: 'เอกซเรย์ทรวงอก กระดูก ข้อ' },
-  { code: 'CT', name: 'เอกซเรย์คอมพิวเตอร์ (CT)', floor: 'ชั้น 2', room: 'ห้อง CT Scan', averageServiceMin: 20, capacity: 6, category: 'imaging', pos: [770, 70], description: 'CT Scan อวัยวะภายใน' },
-  { code: 'MRI', name: 'ตรวจคลื่นแม่เหล็กไฟฟ้า (MRI)', floor: 'ชั้น 2', room: 'ห้อง MRI', averageServiceMin: 35, capacity: 4, category: 'imaging', pos: [890, 70], description: 'MRI ตรวจวินิจฉัยอย่างละเอียด' },
-  { code: 'IR', name: 'งานรังสีร่วมรักษา', floor: 'ชั้น 2', room: 'ห้อง IR Suite', averageServiceMin: 25, capacity: 5, category: 'imaging', pos: [1010, 70], description: 'หัตถการทางรังสีวิทยา' },
-  { code: 'HEM', name: 'คลินิกโลหิตวิทยา', floor: 'ชั้น 2', room: 'ห้อง 215', averageServiceMin: 15, capacity: 6, category: 'clinical', pos: [650, 390], description: 'ตรวจรักษาโรคเลือดและไขกระดูก' },
-  { code: 'SUR', name: 'คลินิกศัลยกรรม', floor: 'ชั้น 2', room: 'ห้อง 216', averageServiceMin: 15, capacity: 6, category: 'clinical', pos: [650, 470], description: 'ตรวจและนัดผ่าตัด' },
-  { code: 'GYN', name: 'คลินิกมะเร็งนรีเวช', floor: 'ชั้น 2', room: 'ห้อง 218', averageServiceMin: 15, capacity: 6, category: 'clinical', pos: [770, 470], description: 'ตรวจเฉพาะทางมะเร็งนรีเวช' },
-  { code: 'ENT', name: 'คลินิกหู คอ จมูก', floor: 'ชั้น 2', room: 'ห้อง 220', averageServiceMin: 15, capacity: 6, category: 'clinical', pos: [890, 470], description: 'ตรวจโสต ศอ นาสิกวิทยา' },
-  { code: 'OST', name: 'งานออสโตมีและดูแลแผล', floor: 'ชั้น 2', room: 'ห้องดูแลแผล 225', averageServiceMin: 18, capacity: 6, category: 'clinical', pos: [1010, 470], description: 'ล้างแผล ดูแลท่อและทวารเทียม' },
-  { code: 'RC', name: 'พบแพทย์หลังผลตรวจ', floor: 'ชั้น 2', room: 'ห้องตรวจ 230', averageServiceMin: 12, capacity: 8, category: 'clinical', pos: [1020, 320], description: 'ฟังผลแล็บ/เอกซเรย์ และสรุปการรักษา' },
-  { code: 'TD', name: 'วินิจฉัยและวางแผนการรักษา', floor: 'ชั้น 2', room: 'ห้องประชุมแผนก', averageServiceMin: 20, capacity: 5, category: 'clinical', pos: [1130, 320], description: 'Tumor Board และแผนการรักษาระยะยาว' },
+  { code: 'XR', name: 'รังสีวินิจฉัย (X-Ray)', floor: 'ชั้น 2', room: 'ห้องรังสี 210', averageServiceMin: 15, capacity: 8, category: 'imaging', pos: [650, 70], description: 'จุดอ้างอิงบนแผนผัง (ยังไม่มี operational workspace ในรุ่นสาธิต)' },
+  { code: 'CT', name: 'เอกซเรย์คอมพิวเตอร์ (CT)', floor: 'ชั้น 2', room: 'ห้อง CT Scan', averageServiceMin: 20, capacity: 6, category: 'imaging', pos: [770, 70], description: 'จุดอ้างอิงบนแผนผัง (ยังไม่มี operational workspace ในรุ่นสาธิต)' },
+  { code: 'MRI', name: 'ตรวจคลื่นแม่เหล็กไฟฟ้า (MRI)', floor: 'ชั้น 2', room: 'ห้อง MRI', averageServiceMin: 35, capacity: 4, category: 'imaging', pos: [890, 70], description: 'จุดอ้างอิงบนแผนผัง (ยังไม่มี operational workspace ในรุ่นสาธิต)' },
+  { code: 'IR', name: 'งานรังสีร่วมรักษา', floor: 'ชั้น 2', room: 'ห้อง IR Suite', averageServiceMin: 25, capacity: 5, category: 'imaging', pos: [1010, 70], description: 'จุดอ้างอิงบนแผนผัง (ยังไม่มี operational workspace ในรุ่นสาธิต)' },
+  { code: 'HEM', name: 'คลินิกโลหิตวิทยา', floor: 'ชั้น 2', room: 'ห้อง 215', averageServiceMin: 15, capacity: 6, category: 'clinical', pos: [650, 390], description: 'จุดอ้างอิงบนแผนผัง' },
+  { code: 'SUR', name: 'คลินิกศัลยกรรม', floor: 'ชั้น 2', room: 'ห้อง 216', averageServiceMin: 15, capacity: 6, category: 'clinical', pos: [650, 470], description: 'จุดอ้างอิงบนแผนผัง' },
+  { code: 'GYN', name: 'คลินิกมะเร็งนรีเวช', floor: 'ชั้น 2', room: 'ห้อง 218', averageServiceMin: 15, capacity: 6, category: 'clinical', pos: [770, 470], description: 'จุดอ้างอิงบนแผนผัง' },
+  { code: 'ENT', name: 'คลินิกหู คอ จมูก', floor: 'ชั้น 2', room: 'ห้อง 220', averageServiceMin: 15, capacity: 6, category: 'clinical', pos: [890, 470], description: 'จุดอ้างอิงบนแผนผัง' },
+  { code: 'OST', name: 'งานออสโตมีและดูแลแผล', floor: 'ชั้น 2', room: 'ห้องดูแลแผล 225', averageServiceMin: 18, capacity: 6, category: 'clinical', pos: [1010, 470], description: 'จุดอ้างอิงบนแผนผัง' },
+  { code: 'RC', name: 'พบแพทย์หลังผลตรวจ', floor: 'ชั้น 2', room: 'ห้องตรวจ 230', averageServiceMin: 12, capacity: 8, category: 'clinical', pos: [1020, 320], description: 'จุดอ้างอิงบนแผนผัง' },
+  { code: 'TD', name: 'วินิจฉัยและวางแผนการรักษา', floor: 'ชั้น 2', room: 'ห้องประชุมแผนก', averageServiceMin: 20, capacity: 5, category: 'clinical', pos: [1130, 320], description: 'จุดอ้างอิงบนแผนผัง' },
 
   // Floor 3: Specialized Treatments
   { code: 'INFUSION', name: 'ห้องให้สารน้ำและยาทางหลอดเลือด', floor: 'ชั้น 3', room: 'Infusion Lounge', averageServiceMin: 75, capacity: 8, category: 'treatment', pos: [830, 420], description: 'น้ำเกลือ ยาทางหลอดเลือด และเคมีบำบัดแบบ Day Care' },
@@ -57,10 +57,11 @@ export const STATIONS: StationDefinition[] = [
 
 export const PC_CODES = new Set(['PC', 'PC2', 'PC3', 'PC4'])
 export const BASE_ROUTE = ['NPR', 'EV', 'VM', 'MHT'] as const
-export const OPTIONAL_ROUTE_CODES = new Set([
-  'XR', 'CT', 'MRI', 'IR', 'LAB', 'LABC', 'HEM', 'SUR', 'GYN', 'ENT', 'OST',
-  'INFUSION', 'RC', 'TD', 'PD',
-])
+export const NURSE_QUEUE_CODES = new Set<string>(BASE_ROUTE)
+
+// Only stations with a complete operator workspace may be placed in a new doctor route.
+// This prevents demo journeys from getting stuck at map-only/reference stations.
+export const OPTIONAL_ROUTE_CODES = new Set(['LAB', 'LABC', 'INFUSION', 'PD'])
 
 export const stationMap = new Map(STATIONS.map((station) => [station.code, station]))
 
@@ -80,7 +81,7 @@ export function buildDoctorRoute(selected: string[], terminal: 'DH' | 'IPW') {
   const unique = new Set(selected)
   if (unique.size !== selected.length) throw new Error('ห้ามเลือก Station ซ้ำ')
   for (const code of selected) {
-    if (!OPTIONAL_ROUTE_CODES.has(code)) throw new Error(`Station ${code} หลังห้องตรวจไม่ถูกต้อง`)
+    if (!OPTIONAL_ROUTE_CODES.has(code)) throw new Error(`Station ${code} หลังห้องตรวจไม่รองรับใน workflow ปัจจุบัน`)
   }
   return terminal === 'IPW' ? [...selected, 'HA', 'IPW'] : [...selected, 'DH']
 }
