@@ -5,7 +5,6 @@ resources:
   - namespace.yaml
   - configmap.yaml
   - secret.yaml
-  - mongo.yaml
   - app.yaml
   - operations.yaml
 labels:
