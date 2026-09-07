@@ -6,14 +6,9 @@ import { useRouter } from 'next/navigation'
 import {
   Bell,
   Calendar,
-  Check,
-  Clock,
   HelpCircle,
   Home,
   LogOut,
-  Send,
-  ShieldAlert,
-  Sparkles,
   User,
 } from 'lucide-react'
 import { clientApi } from '@/lib/client'
@@ -24,10 +19,9 @@ import type {
   Journey,
   Notice,
   PublicUser,
-  TriageSession,
 } from '@/lib/types'
 
-type Section = 'home' | 'previsit' | 'triage' | 'appointment' | 'notifications' | 'profile'
+type Section = 'home' | 'previsit' | 'notifications' | 'profile'
 type MessageTone = 'success' | 'danger' | 'warning' | 'info'
 
 const STATUS_LABELS: Record<string, string> = {
@@ -115,7 +109,41 @@ function JourneyCard({ journey }: { journey: Journey }) {
   )
 }
 
-function PrevisitTab({ onSaved }: { onSaved: () => Promise<void> }) {
+function AppointmentStatusCard({ appointment, busy, error, onArrive, onCancel }: {
+  appointment: Appointment
+  busy: boolean
+  error: string
+  onArrive: () => Promise<void>
+  onCancel: () => Promise<void>
+}) {
+  const canArrive = appointment.status === 'confirmed' && sameBangkokDay(appointment.appointment_at)
+  const canCancel = ['submitted', 'nurse_proposed', 'confirmed'].includes(appointment.status)
+
+  return (
+    <section className="patient-card">
+      <div className="patient-card-head">
+        <div><span className="eyebrow">ACTIVE APPOINTMENT</span><h2>นัดหมายของฉัน</h2></div>
+        <span className={`appointment-pill ${appointment.status}`}>{STATUS_LABELS[appointment.status] || appointment.status}</span>
+      </div>
+      <div className="appointment-details">
+        <div><span>อาการสำคัญ</span><strong>{appointment.chief_complaint}</strong></div>
+        <div><span>วันและเวลานัด</span><strong>{thaiDate(appointment.appointment_at)}</strong></div>
+        <div><span>ห้องตรวจ</span><strong>{appointment.assigned_pc || 'รอยืนยัน'}</strong></div>
+      </div>
+      {appointment.nurse_note && <div className="care-note"><span>ข้อความจากพยาบาล:</span><p>{appointment.nurse_note}</p></div>}
+      {appointment.doctor_note && <div className="care-note"><span>ข้อความจากแพทย์:</span><p>{appointment.doctor_note}</p></div>}
+      {error && <div className="inline-alert danger" style={{ marginTop: 12 }}>{error}</div>}
+      {(canArrive || canCancel) && (
+        <div className="patient-actions" style={{ marginTop: 16 }}>
+          {canArrive && <button className="button success large" disabled={busy} onClick={() => void onArrive()}>ฉันมาถึงโรงพยาบาลแล้ว</button>}
+          {canCancel && <button className="button danger-outline" disabled={busy} onClick={() => void onCancel()}>ยกเลิกคำขอ</button>}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function PrevisitAppointmentTab({ appointment, onRefresh }: { appointment: Appointment | null; onRefresh: () => Promise<void> }) {
   const [complaint, setComplaint] = useState('')
   const [food, setFood] = useState('')
   const [symptoms, setSymptoms] = useState('')
@@ -132,6 +160,9 @@ function PrevisitTab({ onSaved }: { onSaved: () => Promise<void> }) {
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
   const [messageTone, setMessageTone] = useState<MessageTone>('info')
+  const [appointmentError, setAppointmentError] = useState('')
+
+  const activeAppointment = appointment && !['cancelled', 'completed'].includes(appointment.status) ? appointment : null
 
   useEffect(() => {
     let active = true
@@ -160,15 +191,21 @@ function PrevisitTab({ onSaved }: { onSaved: () => Promise<void> }) {
     return () => { active = false }
   }, [])
 
-  async function handleSavePrevisit(e: FormEvent) {
+  useEffect(() => {
+    if (!complaint && appointment?.chief_complaint) setComplaint(appointment.chief_complaint)
+  }, [appointment, complaint])
+
+  async function handleSaveAndAppointment(e: FormEvent) {
     e.preventDefault()
     if (!complaint.trim()) {
       setMessageTone('warning')
       setMessage('กรุณากรอกอาการสำคัญ')
       return
     }
+
     setSaving(true)
     setMessage('')
+    setAppointmentError('')
     try {
       await clientApi.savePrevisit({
         chief_complaint: complaint.trim(),
@@ -187,26 +224,89 @@ function PrevisitTab({ onSaved }: { onSaved: () => Promise<void> }) {
           weight: weight ? Number(weight) : undefined,
         },
       })
+
+      if (!activeAppointment) {
+        await clientApi.createAppointment(complaint.trim())
+        setMessage('บันทึกข้อมูลก่อนมารับบริการและส่งคำขอนัดหมายแพทย์เรียบร้อยแล้ว')
+      } else if (activeAppointment.status === 'submitted') {
+        await clientApi.updateAppointment(activeAppointment.id, complaint.trim())
+        setMessage('บันทึกข้อมูลก่อนมารับบริการและอัปเดตคำขอนัดหมายเรียบร้อยแล้ว')
+      } else {
+        setMessage('บันทึกข้อมูลก่อนมารับบริการเรียบร้อยแล้ว นัดหมายเดิมยังคงอยู่')
+      }
+
       setMessageTone('success')
-      setMessage('บันทึกข้อมูลก่อนมารับบริการแล้ว ทีมพยาบาลจะเห็นข้อมูลทันทีที่ท่านเช็กอิน')
-      await onSaved()
+      await onRefresh()
     } catch (cause) {
       setMessageTone('danger')
-      setMessage(cause instanceof Error ? cause.message : 'บันทึกไม่สำเร็จ')
+      setMessage(cause instanceof Error ? cause.message : 'บันทึกข้อมูลหรือส่งคำขอนัดหมายไม่สำเร็จ')
     } finally {
       setSaving(false)
     }
   }
 
+  async function handleArrive() {
+    if (!activeAppointment) return
+    setSaving(true)
+    setAppointmentError('')
+    try {
+      await clientApi.reportArrival(activeAppointment.id)
+      await onRefresh()
+    } catch (cause) {
+      setAppointmentError(cause instanceof Error ? cause.message : 'แจ้งมาถึงไม่สำเร็จ')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleCancel() {
+    if (!activeAppointment || !window.confirm('ยืนยันยกเลิกคำขอนัดหมายนี้?')) return
+    setSaving(true)
+    setAppointmentError('')
+    try {
+      await clientApi.cancelAppointment(activeAppointment.id)
+      setMessageTone('success')
+      setMessage('ยกเลิกคำขอนัดหมายเรียบร้อยแล้ว สามารถกรอกข้อมูลและส่งคำขอนัดหมายใหม่ได้')
+      await onRefresh()
+    } catch (cause) {
+      setAppointmentError(cause instanceof Error ? cause.message : 'ยกเลิกไม่สำเร็จ')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const submitLabel = !activeAppointment
+    ? 'บันทึกข้อมูลและส่งคำขอนัดหมาย'
+    : activeAppointment.status === 'submitted'
+      ? 'บันทึกข้อมูลและอัปเดตคำขอนัดหมาย'
+      : 'บันทึกข้อมูลก่อนมารับบริการ'
+
   return (
     <div className="patient-section">
       <div className="patient-section-title">
-        <span className="eyebrow">PRE-VISIT HEALTH FORM</span>
-        <h1>ข้อมูลก่อนมารับบริการ</h1>
-        <p>กรอกข้อมูลสุขภาพล่วงหน้าเพื่อลดเวลารอคอยและการซักประวัติซ้ำซ้อน</p>
+        <span className="eyebrow">PRE-VISIT & APPOINTMENT</span>
+        <h1>ข้อมูลก่อนมารับบริการและนัดหมายของฉัน</h1>
+        <p>กรอกข้อมูลสุขภาพล่วงหน้า แล้วส่งคำขอนัดหมายแพทย์ได้ในขั้นตอนเดียว</p>
       </div>
 
-      <form className="patient-card form-card" onSubmit={handleSavePrevisit}>
+      {activeAppointment && (
+        <AppointmentStatusCard
+          appointment={activeAppointment}
+          busy={saving}
+          error={appointmentError}
+          onArrive={handleArrive}
+          onCancel={handleCancel}
+        />
+      )}
+
+      <form className="patient-card form-card" onSubmit={handleSaveAndAppointment}>
+        <div className="patient-card-head">
+          <div>
+            <span className="eyebrow">PRE-VISIT HEALTH FORM</span>
+            <h2>{activeAppointment ? 'ข้อมูลก่อนมารับบริการ' : 'กรอกข้อมูลเพื่อขอนัดหมาย'}</h2>
+          </div>
+        </div>
+
         <label><span>อาการสำคัญที่ต้องการปรึกษาแพทย์ <em>*</em></span><textarea required rows={3} value={complaint} onChange={(e) => setComplaint(e.target.value)} placeholder="อธิบายอาการที่เกิดขึ้น เช่น ปวดท้องหลังทานอาหาร มีก้อนที่ลำคอ" /></label>
         <label><span>การรับประทานอาหารช่วงนี้</span><input value={food} onChange={(e) => setFood(e.target.value)} placeholder="เช่น รับประทานได้น้อย เบื่ออาหาร คลื่นไส้" /></label>
         <label><span>อาการร่วมอื่น ๆ (คั่นด้วยจุลภาค)</span><input value={symptoms} onChange={(e) => setSymptoms(e.target.value)} placeholder="เช่น มีไข้, อ่อนเพลีย, น้ำหนักลด" /></label>
@@ -233,181 +333,14 @@ function PrevisitTab({ onSaved }: { onSaved: () => Promise<void> }) {
             <label><span>ชีพจร (bpm)</span><input type="number" value={pulse} onChange={(e) => setPulse(e.target.value)} placeholder="75" /></label>
             <label><span>ออกซิเจน SpO₂ (%)</span><input type="number" value={spo2} onChange={(e) => setSpo2(e.target.value)} placeholder="98" /></label>
           </div>
+          <div className="form-two" style={{ marginTop: 10 }}>
+            <label><span>น้ำหนัก (กก.)</span><input type="number" step="0.1" value={weight} onChange={(e) => setWeight(e.target.value)} placeholder="60" /></label>
+          </div>
         </div>
 
         {message && <div className={`inline-alert ${messageTone}`}>{message}</div>}
-        <button className="button primary large full" disabled={saving}>{saving ? 'กำลังบันทึก…' : 'บันทึกข้อมูลก่อนมารับบริการ'}</button>
+        <button className="button primary large full" disabled={saving}>{saving ? 'กำลังบันทึก…' : submitLabel}</button>
       </form>
-    </div>
-  )
-}
-
-function TriageTab({ onSaved }: { onSaved: () => Promise<void> }) {
-  const [session, setSession] = useState<TriageSession | null>(null)
-  const [inputMsg, setInputMsg] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [message, setMessage] = useState('')
-  const [messageTone, setMessageTone] = useState<MessageTone>('info')
-
-  useEffect(() => {
-    let active = true
-    clientApi.getCurrentTriageSession().then(async (res) => {
-      if (!active) return
-      if (res) setSession(res)
-      else {
-        const created = await clientApi.createTriageSession()
-        if (active) setSession(created)
-      }
-    }).catch((cause) => {
-      if (!active) return
-      setMessageTone('danger')
-      setMessage(cause instanceof Error ? cause.message : 'เริ่มแบบคัดกรองไม่สำเร็จ')
-    })
-    return () => { active = false }
-  }, [])
-
-  async function handleSend(e: FormEvent) {
-    e.preventDefault()
-    if (!inputMsg.trim() || !session) return
-    setBusy(true)
-    setMessage('')
-    try {
-      const updated = await clientApi.sendTriageMessage(session.id, inputMsg.trim())
-      setSession(updated)
-      setInputMsg('')
-    } catch (cause) {
-      setMessageTone('danger')
-      setMessage(cause instanceof Error ? cause.message : 'ส่งข้อความคัดกรองไม่สำเร็จ')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function handleSubmitToNurse() {
-    if (!session) return
-    setBusy(true)
-    setMessage('')
-    try {
-      await clientApi.submitTriageSession(session.id)
-      setMessageTone('success')
-      setMessage('ส่งบทสนทนาคัดกรองให้พยาบาลเรียบร้อยแล้ว')
-      await onSaved()
-    } catch (cause) {
-      setMessageTone('danger')
-      setMessage(cause instanceof Error ? cause.message : 'ส่งบทสรุปคัดกรองไม่สำเร็จ')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <div className="patient-section">
-      <div className="patient-section-title">
-        <span className="eyebrow">การตอบกลับตามกฎจำลอง</span>
-        <h1>คัดกรองอาการเบื้องต้น</h1>
-        <p>ระบบตอบกลับตามกฎจำลองเพื่อรวบรวมข้อมูลเบื้องต้น ไม่วินิจฉัยโรคและไม่แทนบุคลากรทางการแพทย์</p>
-      </div>
-
-      <div className="patient-card">
-        <div className="inline-alert warning" style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginBottom: 16 }}>
-          <ShieldAlert size={20} style={{ flexShrink: 0, marginTop: 2 }} />
-          <div style={{ fontSize: '.8rem', lineHeight: 1.5 }}><strong>ข้อควรระวัง:</strong> หากท่านมีอาการฉุกเฉินวิกฤต กรุณาติดต่อบริการฉุกเฉินหรือไปห้องฉุกเฉินทันที</div>
-        </div>
-
-        <div className="chat-container">
-          {(session?.messages || []).map((msg, index) => (
-            <div key={msg.id || index} className={`chat-bubble ${msg.role}`}>
-              <div style={{ fontSize: '.7rem', opacity: 0.7, marginBottom: 2 }}>{msg.role === 'patient' ? 'คุณ' : 'CareLink ระบบตอบกลับจำลอง'}</div>
-              <div>{msg.content}</div>
-            </div>
-          ))}
-        </div>
-
-        {session?.status === 'submitted' ? (
-          <div className="inline-alert success"><Check size={16} aria-hidden="true" /> ข้อมูลคัดกรองนี้ถูกส่งให้พยาบาลที่จุดซักประวัติแล้ว</div>
-        ) : (
-          <form onSubmit={handleSend} style={{ display: 'grid', gap: 10 }}>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input value={inputMsg} onChange={(e) => setInputMsg(e.target.value)} placeholder="พิมพ์อธิบายอาการของคุณที่นี่..." disabled={busy || !session} />
-              <button className="button primary" disabled={busy || !inputMsg.trim() || !session}><Send size={16} /> ส่ง</button>
-            </div>
-            {session?.messages && session.messages.length >= 3 && (
-              <button type="button" className="button success full" style={{ marginTop: 8 }} onClick={() => void handleSubmitToNurse()} disabled={busy}>
-                <Send size={16} aria-hidden="true" /> ส่งบทสรุปคัดกรองให้พยาบาล
-              </button>
-            )}
-          </form>
-        )}
-        {message && <div className={`inline-alert ${messageTone}`} style={{ marginTop: 10 }}>{message}</div>}
-      </div>
-    </div>
-  )
-}
-
-function AppointmentTab({ appointment, onRefresh }: { appointment: Appointment | null; onRefresh: () => Promise<void> }) {
-  const [complaint, setComplaint] = useState(appointment?.chief_complaint || '')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
-
-  const canArrive = appointment?.status === 'confirmed' && sameBangkokDay(appointment.appointment_at)
-  const canCancel = appointment && ['submitted', 'nurse_proposed', 'confirmed'].includes(appointment.status)
-
-  async function handleCreate(e: FormEvent) {
-    e.preventDefault()
-    if (!complaint.trim()) { setError('กรุณาระบุอาการสำคัญ'); return }
-    setBusy(true); setError(''); setSuccess('')
-    try {
-      if (appointment?.status === 'submitted') await clientApi.updateAppointment(appointment.id, complaint.trim())
-      else await clientApi.createAppointment(complaint.trim())
-      setSuccess('ส่งคำขอนัดหมายแพทย์เรียบร้อยแล้ว')
-      await onRefresh()
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'บันทึกไม่สำเร็จ')
-    } finally { setBusy(false) }
-  }
-
-  async function handleArrive() {
-    if (!appointment) return
-    setBusy(true); setError('')
-    try { await clientApi.reportArrival(appointment.id); await onRefresh() }
-    catch (cause) { setError(cause instanceof Error ? cause.message : 'แจ้งมาถึงไม่สำเร็จ') }
-    finally { setBusy(false) }
-  }
-
-  async function handleCancel() {
-    if (!appointment || !window.confirm('ยืนยันยกเลิกคำขอนัดหมายนี้?')) return
-    setBusy(true); setError('')
-    try { await clientApi.cancelAppointment(appointment.id); await onRefresh() }
-    catch (cause) { setError(cause instanceof Error ? cause.message : 'ยกเลิกไม่สำเร็จ') }
-    finally { setBusy(false) }
-  }
-
-  return (
-    <div className="patient-section">
-      <div className="patient-section-title"><span className="eyebrow">APPOINTMENT MANAGEMENT</span><h1>นัดหมายของฉัน</h1><p>ส่งคำขอนัดหมายแพทย์และแจ้งการมาถึงโรงพยาบาลในวันนัด</p></div>
-
-      {appointment && !['cancelled', 'completed'].includes(appointment.status) ? (
-        <section className="patient-card">
-          <div className="patient-card-head"><div><span className="eyebrow">ACTIVE APPOINTMENT</span><h2>สถานะคำขอนัดหมาย</h2></div><span className={`appointment-pill ${appointment.status}`}>{STATUS_LABELS[appointment.status] || appointment.status}</span></div>
-          <div className="appointment-details"><div><span>อาการสำคัญ</span><strong>{appointment.chief_complaint}</strong></div><div><span>วันและเวลานัด</span><strong>{thaiDate(appointment.appointment_at)}</strong></div><div><span>ห้องตรวจ</span><strong>{appointment.assigned_pc || 'รอยืนยัน'}</strong></div></div>
-          {appointment.nurse_note && <div className="care-note"><span>ข้อความจากพยาบาล:</span><p>{appointment.nurse_note}</p></div>}
-          {appointment.doctor_note && <div className="care-note"><span>ข้อความจากแพทย์:</span><p>{appointment.doctor_note}</p></div>}
-          {error && <div className="inline-alert danger" style={{ marginTop: 12 }}>{error}</div>}
-          <div className="patient-actions" style={{ marginTop: 16 }}>
-            {canArrive && <button className="button success large" disabled={busy} onClick={() => void handleArrive()}>ฉันมาถึงโรงพยาบาลแล้ว</button>}
-            {canCancel && <button className="button danger-outline" disabled={busy} onClick={() => void handleCancel()}>ยกเลิกคำขอ</button>}
-          </div>
-        </section>
-      ) : (
-        <form className="patient-card form-card" onSubmit={handleCreate}>
-          <div className="patient-card-head"><div><span className="eyebrow">NEW APPOINTMENT</span><h2>ส่งอาการเพื่อขอนัดหมายแพทย์</h2></div></div>
-          <label><span>อาการสำคัญที่ต้องการพบแพทย์ <em>*</em></span><textarea required rows={4} value={complaint} onChange={(e) => setComplaint(e.target.value)} placeholder="อธิบายอาการที่ต้องการให้ทีมแพทย์และพยาบาลนัดหมาย" /></label>
-          {error && <div className="inline-alert danger">{error}</div>}
-          {success && <div className="inline-alert success">{success}</div>}
-          <button className="button primary large full" disabled={busy}>{busy ? 'กำลังส่งคำขอ…' : 'ส่งคำขอนัดหมายแพทย์'}</button>
-        </form>
-      )}
     </div>
   )
 }
@@ -549,12 +482,9 @@ export function PatientDashboard({ displayName }: { displayName: string }) {
           <>
             {section === 'home' && <>
               <div className="patient-greeting"><span>{new Intl.DateTimeFormat('th-TH', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Bangkok' }).format(new Date())}</span><h1>สวัสดี, {user?.display_name || displayName}</h1><p>ติดตามทุกขั้นตอนการรับบริการและการนัดหมายของคุณได้จากหน้านี้</p></div>
-              {journey ? <JourneyCard journey={journey} /> : <section className="no-journey"><span className="soft-icon large">✓</span><h2>ยังไม่มี Visit ที่กำลังดำเนินการ</h2><p>{appointment?.status === 'confirmed' ? 'เมื่อถึงวันนัด ให้กดแจ้งมาถึงเพื่อเริ่มต้นขั้นตอนการรับบริการ' : 'ส่งคำขอนัดหมายหรือกรอกข้อมูลก่อนมาเพื่อเริ่มต้น'}</p></section>}
-              {appointment && <AppointmentTab appointment={appointment} onRefresh={refresh} />}
+              {journey ? <JourneyCard journey={journey} /> : <section className="no-journey"><span className="soft-icon large">✓</span><h2>ยังไม่มี Visit ที่กำลังดำเนินการ</h2><p>{appointment?.status === 'confirmed' ? 'เมื่อถึงวันนัด ให้เปิดเมนูก่อนมา/นัดหมายแล้วกดแจ้งมาถึงเพื่อเริ่มต้นขั้นตอนการรับบริการ' : 'กรอกข้อมูลก่อนมาและส่งคำขอนัดหมายเพื่อเริ่มต้น'}</p></section>}
             </>}
-            {section === 'previsit' && <PrevisitTab onSaved={refresh} />}
-            {section === 'triage' && <TriageTab onSaved={refresh} />}
-            {section === 'appointment' && <AppointmentTab appointment={appointment} onRefresh={refresh} />}
+            {section === 'previsit' && <PrevisitAppointmentTab appointment={appointment} onRefresh={refresh} />}
             {section === 'notifications' && <div className="patient-section">
               <div className="patient-section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}><div><span className="eyebrow">NOTIFICATIONS</span><h1>การแจ้งเตือน</h1></div>{unread > 0 && <button className="button ghost" style={{ minHeight: 32, fontSize: '.78rem' }} onClick={() => void handleMarkAllRead()}>อ่านทั้งหมด</button>}</div>
               <div className="notice-list">{notices.length === 0 ? <div className="empty-state large">ยังไม่มีการแจ้งเตือน</div> : notices.map((notice) => <button className={`notice-card ${notice.is_read ? 'read' : ''}`} key={notice.id} onClick={() => void handleReadNotice(notice.id)}><span className="notice-dot" /><div><strong>{notice.title}</strong><p>{notice.message}</p><time>{thaiDate(notice.created_at)}</time></div>{!notice.is_read && <em>ใหม่</em>}</button>)}</div>
@@ -566,9 +496,7 @@ export function PatientDashboard({ displayName }: { displayName: string }) {
 
       <nav className="patient-bottom-nav" aria-label="เมนูผู้ป่วย">
         <button className={section === 'home' ? 'active' : ''} aria-current={section === 'home' ? 'page' : undefined} onClick={() => setSection('home')}><span><Home size={18} /></span>หน้าหลัก</button>
-        <button className={section === 'previsit' ? 'active' : ''} aria-current={section === 'previsit' ? 'page' : undefined} onClick={() => setSection('previsit')}><span><Calendar size={18} /></span>ก่อนมา</button>
-        <button className={section === 'triage' ? 'active' : ''} aria-current={section === 'triage' ? 'page' : undefined} onClick={() => setSection('triage')}><span><Sparkles size={18} /></span>คัดกรอง</button>
-        <button className={section === 'appointment' ? 'active' : ''} aria-current={section === 'appointment' ? 'page' : undefined} onClick={() => setSection('appointment')}><span><Clock size={18} /></span>นัดหมาย</button>
+        <button className={section === 'previsit' ? 'active' : ''} aria-current={section === 'previsit' ? 'page' : undefined} onClick={() => setSection('previsit')}><span><Calendar size={18} /></span>ก่อนมา/นัดหมาย</button>
         <button className={section === 'notifications' ? 'active' : ''} aria-current={section === 'notifications' ? 'page' : undefined} onClick={() => setSection('notifications')}><span><Bell size={18} /></span>แจ้งเตือน{unread > 0 && <em>{unread}</em>}</button>
         <button className={section === 'profile' ? 'active' : ''} aria-current={section === 'profile' ? 'page' : undefined} onClick={() => setSection('profile')}><span><User size={18} /></span>บัญชี</button>
       </nav>
