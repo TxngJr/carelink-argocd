@@ -1,8 +1,7 @@
 /* Patient bottom navigation overrides.
- * The patient workspace currently has 4 primary destinations. The original
- * global rule still used a six-column grid, which left the visible buttons
- * shifted to the left on mobile. Keep this file after globals.css so the
- * navigation remains centered and evenly distributed.
+ * The patient workspace currently has 4 primary destinations. Use flex here
+ * instead of inheriting the old six-column grid from globals.css so all four
+ * items always share the full navigation width and stay visually centered.
  */
 .patient-bottom-nav {
   width: min(440px, calc(100% - 24px));
@@ -10,8 +9,9 @@
   min-height: 76px;
   bottom: max(10px, env(safe-area-inset-bottom));
   padding: 7px 8px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  display: flex;
   align-items: stretch;
+  justify-content: center;
   gap: 6px;
   border-color: #cfe1dc;
   border-radius: 25px;
@@ -22,7 +22,10 @@
 }
 
 .patient-bottom-nav button {
+  flex: 1 1 0;
+  width: 0;
   min-width: 0;
+  max-width: none;
   min-height: 60px;
   padding: 6px 3px;
   border-radius: 17px;
