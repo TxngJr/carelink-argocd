@@ -1,0 +1,100 @@
+/* Patient bottom navigation overrides.
+ * The patient workspace currently has 4 primary destinations. The original
+ * global rule still used a six-column grid, which left the visible buttons
+ * shifted to the left on mobile. Keep this file after globals.css so the
+ * navigation remains centered and evenly distributed.
+ */
+.patient-bottom-nav {
+  width: min(440px, calc(100% - 24px));
+  height: auto;
+  min-height: 76px;
+  bottom: max(10px, env(safe-area-inset-bottom));
+  padding: 7px 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 6px;
+  border-color: #cfe1dc;
+  border-radius: 25px;
+  background: rgba(255, 255, 255, .97);
+  box-shadow: 0 14px 38px rgba(19, 65, 59, .14), 0 2px 8px rgba(19, 65, 59, .06);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+}
+
+.patient-bottom-nav button {
+  min-width: 0;
+  min-height: 60px;
+  padding: 6px 3px;
+  border-radius: 17px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  text-align: center;
+  line-height: 1.2;
+  font-size: .66rem;
+  font-weight: 600;
+  white-space: normal;
+  transition: background-color .18s ease, color .18s ease, transform .18s ease;
+}
+
+.patient-bottom-nav button > span {
+  width: 30px;
+  height: 27px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  line-height: 1;
+  transition: background-color .18s ease, transform .18s ease;
+}
+
+.patient-bottom-nav button svg {
+  width: 20px;
+  height: 20px;
+  stroke-width: 2;
+}
+
+.patient-bottom-nav button.active {
+  color: var(--brand);
+  background: var(--soft);
+  font-weight: 800;
+}
+
+.patient-bottom-nav button.active > span {
+  background: rgba(19, 93, 84, .06);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .patient-bottom-nav button:hover:not(.active) {
+    color: var(--brand);
+    background: rgba(233, 245, 242, .55);
+  }
+}
+
+@media (max-width: 420px) {
+  .patient-bottom-nav {
+    width: calc(100% - 16px);
+    min-height: 72px;
+    padding: 6px;
+    gap: 3px;
+    border-radius: 22px;
+  }
+
+  .patient-bottom-nav button {
+    min-height: 58px;
+    padding-inline: 2px;
+    font-size: .63rem;
+  }
+
+  .patient-bottom-nav button > span {
+    width: 28px;
+    height: 25px;
+  }
+}
+
+@media (max-width: 350px) {
+  .patient-bottom-nav button {
+    font-size: .59rem;
+  }
+}
