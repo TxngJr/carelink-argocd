@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import './globals.css'
 import './staff.css'
 import './ux-polish.css'
+import './patient-nav.css'
 
 export const metadata: Metadata = {
   title: { default: 'CareLink', template: '%s | CareLink' },
